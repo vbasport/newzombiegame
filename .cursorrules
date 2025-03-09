@@ -1,0 +1,18 @@
+Rules for Building the Three.js Game
+Describe Each File’s Purpose - Start every file with a comment explaining what it does (e.g., // This file handles player movement).
+One Job per Component - Each file or module should handle only one specific task (e.g., rendering or game logic).
+Don’t Repeat Code - Avoid duplicating code; reuse existing functions and modules.
+One Place for Each Thing - Store each piece of data or functionality in a single location.
+Cut the Dead Weight - Remove unused or duplicate code when updating the codebase.
+Scale Without Breaking - Design systems to handle growth (e.g., more players or features) without major changes.
+Keep Values Flexible - Use variables or config files instead of hard-coded values (e.g., config.speed).
+Centralize Shared Data - Store common data (e.g., game settings) in one place for consistency.
+Render Smart, Not Hard - Optimize rendering to avoid performance issues like infinite loops or unnecessary renders.
+Make Modules Independent - Design modules (e.g., zombie AI) to work and be tested on their own.
+Talk Through Events - Use events to connect systems (e.g., player shoots → update score).
+Stay Fast and Smooth - Regularly optimize key systems (e.g., rendering, physics) for performance.
+Explain Your Code - Add clear comments and keep updated for easy understanding.
+Secure the Game - Validate inputs, prevent cheating, and make the server authoritative.
+Optimize for All Devices - Ensure consistent performance and controls on both desktop and mobile.
+Handle Errors Gracefully - Implement error handling and logging for easier debugging.
+Test Automatically - Write automated tests for critical systems to catch bugs early.
