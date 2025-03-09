@@ -1,5 +1,7 @@
 // This file handles UI elements such as health bars and game status displays
 import * as THREE from 'three';
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 
 // Interface for entities that can have health bars
 export interface HealthBarEntity {
@@ -7,6 +9,7 @@ export interface HealthBarEntity {
   maxHealth: number;
   isAlive: boolean;
   getMesh(): THREE.Object3D;
+  getName?(): string; // Optional method to get entity name
 }
 
 // Configuration parameters for health bars to keep values flexible
@@ -21,6 +24,16 @@ const UI_CONFIG = {
     playerHealthColor: 0x22cc22, // Green
     zombieHealthColor: 0xcc2222, // Red
     borderSize: 0.02
+  },
+  nameTag: {
+    yOffset: 4.0,            // Position further above health bar (increased)
+    width: 3.0,              // Width of the name tag (increased from 2.0)
+    height: 0.8,             // Height of the name tag (increased from 0.5)
+    fontSize: 32,            // Font size for the name tag (increased from 24)
+    backgroundColor: 'rgba(0, 0, 0, 0.8)', // Background color (more opaque)
+    textColor: 'white',      // Text color
+    borderColor: 'rgba(255, 255, 255, 0.5)', // Border color (more visible)
+    borderWidth: 3           // Border width (increased from 2)
   }
 };
 
@@ -29,11 +42,126 @@ class UISystem {
   private healthBars: Map<HealthBarEntity, {
     container: THREE.Group,
     background: THREE.Mesh,
-    foreground: THREE.Mesh
+    foreground: THREE.Mesh,
+    nameTag?: THREE.Sprite
   }> = new Map();
-
+  private activePlayers: number = 1; // Start with the local player
+  
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+  }
+
+  /**
+   * Sets the number of active players and updates the display
+   */
+  public setActivePlayers(count: number): void {
+    this.activePlayers = count;
+    this.updateActivePlayersDisplay();
+  }
+
+  /**
+   * Updates the active players display
+   */
+  private updateActivePlayersDisplay(): void {
+    // Find the player count element in the UI
+    const playersValue = document.getElementById('players-value');
+    if (playersValue) {
+      playersValue.textContent = this.activePlayers.toString();
+    }
+  }
+
+  /**
+   * Creates a name tag sprite for an entity
+   */
+  private createNameTag(name: string): THREE.Sprite {
+    // Create a canvas for the name tag
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      console.error('Could not get canvas context');
+      return new THREE.Sprite();
+    }
+    
+    // Set canvas size (increased for better quality)
+    canvas.width = 512;
+    canvas.height = 128;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw background with rounded corners
+    ctx.fillStyle = UI_CONFIG.nameTag.backgroundColor;
+    this.roundRect(ctx, 0, 0, canvas.width, canvas.height, 20, true, false);
+    
+    // Draw border
+    ctx.strokeStyle = UI_CONFIG.nameTag.borderColor;
+    ctx.lineWidth = UI_CONFIG.nameTag.borderWidth;
+    this.roundRect(ctx, 0, 0, canvas.width, canvas.height, 20, false, true);
+    
+    // Draw text with shadow for better visibility
+    ctx.shadowColor = 'black';
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+    
+    ctx.font = `bold ${UI_CONFIG.nameTag.fontSize}px Arial`;
+    ctx.fillStyle = UI_CONFIG.nameTag.textColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+    
+    // Create texture and sprite
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      sizeAttenuation: true
+    });
+    
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(UI_CONFIG.nameTag.width, UI_CONFIG.nameTag.height, 1);
+    
+    return sprite;
+  }
+  
+  /**
+   * Helper function to draw rounded rectangles on canvas
+   */
+  private roundRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number,
+    fill: boolean,
+    stroke: boolean
+  ): void {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    
+    if (fill) {
+      ctx.fill();
+    }
+    
+    if (stroke) {
+      ctx.stroke();
+    }
   }
 
   /**
@@ -78,6 +206,21 @@ class UISystem {
     
     // Set initial position
     this.updateHealthBarPosition(entity, this.scene.children[0] as THREE.Camera);
+    
+    // Add name tag if entity has a name
+    if (entity.getName && entity.getName()) {
+      const nameTag = this.createNameTag(entity.getName());
+      nameTag.position.y = UI_CONFIG.nameTag.yOffset - UI_CONFIG.healthBar.yOffset;
+      container.add(nameTag);
+      
+      // Update the health bar entry
+      const healthBar = this.healthBars.get(entity);
+      if (healthBar) {
+        healthBar.nameTag = nameTag;
+      }
+      
+      console.log(`Added name tag for ${entity.getName()}`);
+    }
   }
 
   /**
@@ -101,9 +244,6 @@ class UISystem {
     
     // Hide health bar if entity is dead
     healthBar.container.visible = entity.isAlive;
-    
-    // Debug info
-    console.log(`Updated health bar: ${entity.health}/${entity.maxHealth} (${(healthPercent * 100).toFixed(0)}%)`);
   }
 
   /**

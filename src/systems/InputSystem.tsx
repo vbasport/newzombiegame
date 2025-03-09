@@ -16,6 +16,7 @@ class InputSystem {
     shoot: false
   };
   private isMobileInput: boolean = false;
+  private lastUpdateTime: number = 0;
 
   constructor() {
     window.addEventListener('keydown', this.handleKeyDown.bind(this));
@@ -23,6 +24,21 @@ class InputSystem {
     
     // Detect if mobile device and set flag
     this.isMobileInput = this.detectMobile();
+    this.lastUpdateTime = performance.now();
+  }
+  
+  /**
+   * Update method called each frame to process input
+   */
+  public update(): void {
+    const currentTime = performance.now();
+    const deltaTime = (currentTime - this.lastUpdateTime) / 1000;
+    this.lastUpdateTime = currentTime;
+    
+    // Process any continuous input logic here
+    // For example, handling long presses or input smoothing
+    
+    // For now, this is a placeholder for future input processing
   }
   
   private detectMobile(): boolean {

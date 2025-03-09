@@ -16,8 +16,14 @@ class Player implements HealthBarEntity {
   public kills: number = 0; // Track zombie kills for scoring
   public timeSurvived: number = 0; // Track survival time in seconds
   private mobileFacingDirection: THREE.Vector3 = new THREE.Vector3(0, 0, -1);
+  private playerName: string = 'Player'; // Default player name
   
-  constructor() {
+  constructor(playerName?: string) {
+    // Set player name if provided
+    if (playerName) {
+      this.playerName = decodeURIComponent(playerName);
+    }
+    
     // Create a group to hold all player components
     this.mesh = new THREE.Group();
     
@@ -83,7 +89,7 @@ class Player implements HealthBarEntity {
     rightLeg.position.set(0.25, -0.25, 0);
     this.mesh.add(rightLeg);
 
-    // Create a flashlight/weapon
+    // Create a weapon/gun
     const weaponGeometry = new THREE.CylinderGeometry(0.1, 0.15, 0.6, 8);
     const weaponMaterial = new THREE.MeshStandardMaterial({ 
       color: 0x222222,
@@ -95,12 +101,16 @@ class Player implements HealthBarEntity {
     weapon.position.set(0.5, 0.75, 0.6); // Position in front of right hand
     this.mesh.add(weapon);
     
-    // Add a flashlight light
-    const flashlight = new THREE.SpotLight(0xffffff, 5, 50, Math.PI / 8, 0.5, 1);
-    flashlight.position.set(0.5, 0.75, 0.6);
-    flashlight.target.position.set(0.5, 0.75, 5); // Point forward
-    this.mesh.add(flashlight);
-    this.mesh.add(flashlight.target);
+    // Add a subtle glow to the weapon tip instead of a flashlight
+    const glowGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff6600,
+      transparent: true,
+      opacity: 0.6
+    });
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.position.set(0.5, 0.75, 0.9); // Position at tip of weapon
+    this.mesh.add(glow);
     
     // Initial position slightly raised above ground to prevent z-fighting
     this.mesh.position.set(this.x, 0.01, this.y);
@@ -108,6 +118,20 @@ class Player implements HealthBarEntity {
   
   public getMesh(): THREE.Group {
     return this.mesh;
+  }
+  
+  /**
+   * Get the player's name for display
+   */
+  public getName(): string {
+    return this.playerName;
+  }
+  
+  /**
+   * Set the player's name
+   */
+  public setName(name: string): void {
+    this.playerName = name;
   }
   
   public update(deltaTime: number, inputSystem: InputSystem): void {

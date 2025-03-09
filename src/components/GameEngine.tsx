@@ -1,6 +1,7 @@
 import RenderingSystem from '../systems/RenderingSystem';
 import InputSystem from '../systems/InputSystem';
 import UISystem from '../systems/UISystem';
+import NetworkSystem from '../systems/NetworkSystem';
 import Player from './Player';
 import Zombie from './Zombie';
 import * as THREE from 'three';
@@ -9,7 +10,9 @@ class GameEngine {
   private renderingSystem: RenderingSystem;
   private inputSystem: InputSystem;
   private uiSystem: UISystem;
+  private networkSystem: NetworkSystem;
   private player: Player;
+  private playerName: string;
   private zombies: Zombie[] = [];
   private lastTime: number = 0;
   private zombieSpawnTime: number = 0;
@@ -32,23 +35,31 @@ class GameEngine {
   private isMobile: boolean = false; // Detect if using mobile device
   private waveIndicatorElement: HTMLElement | null = null; // Wave indicator element
 
-  constructor() {
+  constructor(playerName: string = 'Player') {
+    this.playerName = playerName;
     this.renderingSystem = new RenderingSystem();
     this.inputSystem = new InputSystem();
     this.uiSystem = new UISystem(this.renderingSystem.getScene());
+    this.networkSystem = new NetworkSystem(this.playerName);
     this.isMobile = this.detectMobile();
-    this.player = new Player();
+    this.player = new Player(this.playerName);
     this.renderingSystem.addToScene(this.player.getMesh());
     this.uiSystem.createHealthBar(this.player, true);
-    this.createScoreboard();
-    this.createWaveIndicator();
+    
+    // Create unified UI container first
+    this.createUnifiedUI();
+    
     if (this.isMobile) {
       this.createMobileControls();
     }
     this.spawnInitialZombies(3);
     window.addEventListener('keydown', this.handleKeyDown.bind(this));
     window.addEventListener('resize', this.handleWindowResize.bind(this));
-    console.log('Game engine initialized with endless zombie mode');
+    
+    // Set up network event listeners
+    this.setupNetworkListeners();
+    
+    console.log(`Game engine initialized with player name: ${this.playerName}`);
     console.log('Mobile device detected:', this.isMobile);
   }
 
@@ -60,7 +71,7 @@ class GameEngine {
   }
 
   private handleWindowResize(): void {
-    this.updateScoreboardPosition();
+    // Update UI positions when window is resized
     if (this.isMobile && this.mobileControlsElement) {
       this.updateMobileControlsPosition();
     }
@@ -253,118 +264,207 @@ class GameEngine {
     this.mobileControlsElement.style.display = 'flex';
   }
 
-  private createScoreboard(): void {
-    if (this.scoreboardElement) {
-      document.body.removeChild(this.scoreboardElement);
-    }
+  /**
+   * Create a unified UI container for all game status information
+   */
+  private createUnifiedUI(): void {
+    // Create a container for all UI elements
+    const uiContainer = document.createElement('div');
+    uiContainer.id = 'game-ui-container';
+    uiContainer.style.position = 'fixed';
+    uiContainer.style.top = '10px';
+    uiContainer.style.left = '10px';
+    uiContainer.style.right = '10px';
+    uiContainer.style.display = 'flex';
+    uiContainer.style.justifyContent = 'space-between';
+    uiContainer.style.alignItems = 'flex-start';
+    uiContainer.style.pointerEvents = 'none';
+    uiContainer.style.zIndex = '1000';
     
-    const scoreboard = document.createElement('div');
-    scoreboard.id = 'scoreboard';
-    scoreboard.style.position = 'absolute';
-    scoreboard.style.top = '10px';
-    scoreboard.style.left = '50%';
-    scoreboard.style.transform = 'translateX(-50%)';
-    scoreboard.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    scoreboard.style.color = 'white';
-    scoreboard.style.padding = '10px 20px';
-    scoreboard.style.borderRadius = '5px';
-    scoreboard.style.fontFamily = 'Arial, sans-serif';
-    scoreboard.style.zIndex = '1000';
-    scoreboard.style.display = 'flex';
-    scoreboard.style.flexWrap = 'wrap';
-    scoreboard.style.justifyContent = 'center';
-    scoreboard.style.maxWidth = '90%';
-    scoreboard.style.width = 'fit-content';
-    scoreboard.style.boxSizing = 'border-box';
-    scoreboard.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.5)';
+    // Create left panel for scoreboard
+    const leftPanel = document.createElement('div');
+    leftPanel.id = 'game-ui-left-panel';
+    leftPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    leftPanel.style.borderRadius = '5px';
+    leftPanel.style.padding = '10px';
+    leftPanel.style.color = 'white';
+    leftPanel.style.fontFamily = 'Arial, sans-serif';
+    leftPanel.style.fontSize = '14px';
+    leftPanel.style.pointerEvents = 'auto';
     
+    // Create center panel for notifications
+    const centerPanel = document.createElement('div');
+    centerPanel.id = 'game-ui-center-panel';
+    centerPanel.style.display = 'flex';
+    centerPanel.style.flexDirection = 'column';
+    centerPanel.style.alignItems = 'center';
+    centerPanel.style.gap = '10px';
+    
+    // Create right panel for player count and wave info
+    const rightPanel = document.createElement('div');
+    rightPanel.id = 'game-ui-right-panel';
+    rightPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    rightPanel.style.borderRadius = '5px';
+    rightPanel.style.padding = '10px';
+    rightPanel.style.color = 'white';
+    rightPanel.style.fontFamily = 'Arial, sans-serif';
+    rightPanel.style.fontSize = '14px';
+    rightPanel.style.display = 'flex';
+    rightPanel.style.flexDirection = 'column';
+    rightPanel.style.gap = '5px';
+    rightPanel.style.pointerEvents = 'auto';
+    
+    // Add panels to container
+    uiContainer.appendChild(leftPanel);
+    uiContainer.appendChild(centerPanel);
+    uiContainer.appendChild(rightPanel);
+    
+    // Add container to document
+    document.body.appendChild(uiContainer);
+    
+    // Create scoreboard in left panel
+    this.createScoreboard(leftPanel);
+    
+    // Create wave indicator and player count in right panel
+    this.createWaveIndicator(rightPanel);
+  }
+  
+  /**
+   * Create the scoreboard to display player stats
+   */
+  private createScoreboard(container: HTMLElement): void {
+    // Create scoreboard content
     const scoreElement = document.createElement('div');
-    scoreElement.id = 'score-section';
-    scoreElement.innerHTML = `<div>Score: <span id="score-value">${this.gameScore}</span></div>`;
-    scoreElement.style.fontWeight = 'bold';
-    scoreElement.style.fontSize = 'clamp(14px, 3vw, 18px)';
-    scoreElement.style.margin = '0 10px';
+    scoreElement.innerHTML = `<strong>Score:</strong> <span id="score-value">0</span>`;
     
     const healthElement = document.createElement('div');
-    healthElement.id = 'health-section';
-    healthElement.innerHTML = `<div>Health: <span id="health-value">${this.player.health}</span>/${this.player.maxHealth}</div>`;
-    healthElement.style.fontWeight = 'bold';
-    healthElement.style.fontSize = 'clamp(14px, 3vw, 18px)';
-    healthElement.style.margin = '0 10px';
+    healthElement.innerHTML = `<strong>Health:</strong> <span id="health-value">${this.player.health}/${this.player.maxHealth}</span>`;
     
     const killsElement = document.createElement('div');
-    killsElement.id = 'kills-section';
-    killsElement.innerHTML = `<div>Kills: <span id="kills-value">${this.player.kills}</span></div>`;
-    killsElement.style.fontWeight = 'bold';
-    killsElement.style.fontSize = 'clamp(14px, 3vw, 18px)';
-    killsElement.style.margin = '0 10px';
+    killsElement.innerHTML = `<strong>Kills:</strong> <span id="kills-value">0</span>`;
     
-    const timerElement = document.createElement('div');
-    timerElement.id = 'timer-section';
-    timerElement.innerHTML = `<div>Time: <span id="timer-value">0:00</span></div>`;
-    timerElement.style.fontWeight = 'bold';
-    timerElement.style.fontSize = 'clamp(14px, 3vw, 18px)';
-    timerElement.style.margin = '0 10px';
+    const timeElement = document.createElement('div');
+    timeElement.innerHTML = `<strong>Time:</strong> <span id="time-value">0:00</span>`;
     
-    scoreboard.appendChild(scoreElement);
-    scoreboard.appendChild(healthElement);
-    scoreboard.appendChild(killsElement);
-    scoreboard.appendChild(timerElement);
+    // Add elements to the container
+    container.appendChild(scoreElement);
+    container.appendChild(healthElement);
+    container.appendChild(killsElement);
+    container.appendChild(timeElement);
     
-    document.body.appendChild(scoreboard);
-    
-    this.scoreboardElement = scoreboard;
-    
-    this.updateScoreboardPosition();
+    // Store reference to the scoreboard
+    this.scoreboardElement = container;
   }
   
+  /**
+   * Create the wave indicator to show current wave
+   */
+  private createWaveIndicator(container: HTMLElement): void {
+    // Create wave indicator element
+    const waveElement = document.createElement('div');
+    waveElement.id = 'wave-indicator';
+    waveElement.innerHTML = `<strong>Wave:</strong> <span id="wave-value">${this.waveNumber}</span>`;
+    
+    // Create player count element (will be updated by NetworkSystem)
+    const playersElement = document.createElement('div');
+    playersElement.id = 'active-players';
+    playersElement.innerHTML = `<strong>Players Online:</strong> <span id="players-value">1</span>`;
+    
+    // Add elements to the container
+    container.appendChild(waveElement);
+    container.appendChild(playersElement);
+    
+    // Store reference to the wave indicator
+    this.waveIndicatorElement = waveElement;
+    
+    // Set initial player count
+    this.uiSystem.setActivePlayers(1);
+  }
+  
+  /**
+   * Update the scoreboard with current stats
+   */
   private updateScoreboard(): void {
-    const scoreValue = document.getElementById('score-value');
-    const healthValue = document.getElementById('health-value');
-    const killsValue = document.getElementById('kills-value');
-    const timerValue = document.getElementById('timer-value');
-    
-    if (!scoreValue || !healthValue || !killsValue || !timerValue) return;
-    
-    scoreValue.textContent = this.gameScore.toString();
-    healthValue.textContent = Math.ceil(this.player.health).toString();
-    killsValue.textContent = this.player.kills.toString();
-    
-    const minutes = Math.floor(this.player.timeSurvived / 60);
-    const seconds = Math.floor(this.player.timeSurvived % 60);
-    timerValue.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    
-    if (this.player.health < 25) {
-      healthValue.style.color = 'red';
-    } else if (this.player.health < 50) {
-      healthValue.style.color = 'orange';
-    } else {
-      healthValue.style.color = 'white';
-    }
-  }
-  
-  private updateScoreboardPosition(): void {
     if (!this.scoreboardElement) return;
     
-    this.scoreboardElement.style.left = '50%';
-    this.scoreboardElement.style.transform = 'translateX(-50%)';
-    
-    const viewportWidth = window.innerWidth;
-    const scoreboardWidth = this.scoreboardElement.offsetWidth;
-    
-    if (scoreboardWidth > viewportWidth * 0.9) {
-      if (viewportWidth < 400) {
-        this.scoreboardElement.style.flexDirection = 'column';
-        this.scoreboardElement.style.alignItems = 'center';
-      } else {
-        this.scoreboardElement.style.flexDirection = 'row';
-        this.scoreboardElement.style.flexWrap = 'wrap';
-        this.scoreboardElement.style.justifyContent = 'center';
-      }
-    } else {
-      this.scoreboardElement.style.flexDirection = 'row';
-      this.scoreboardElement.style.flexWrap = 'nowrap';
+    // Update score
+    const scoreValue = this.scoreboardElement.querySelector('#score-value');
+    if (scoreValue) {
+      scoreValue.textContent = this.gameScore.toString();
     }
+    
+    // Update health
+    const healthValue = this.scoreboardElement.querySelector('#health-value');
+    if (healthValue) {
+      healthValue.textContent = `${Math.floor(this.player.health)}/${this.player.maxHealth}`;
+    }
+    
+    // Update kills
+    const killsValue = this.scoreboardElement.querySelector('#kills-value');
+    if (killsValue) {
+      killsValue.textContent = this.player.kills.toString();
+    }
+    
+    // Update time
+    const timeValue = this.scoreboardElement.querySelector('#time-value');
+    if (timeValue) {
+      const minutes = Math.floor(this.player.timeSurvived / 60);
+      const seconds = Math.floor(this.player.timeSurvived % 60);
+      timeValue.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+  }
+  
+  /**
+   * Update the wave indicator
+   */
+  private updateWaveIndicator(showTemporarily: boolean = false): void {
+    if (!this.waveIndicatorElement) return;
+    
+    // Update wave number
+    const waveValue = this.waveIndicatorElement.querySelector('#wave-value');
+    if (waveValue) {
+      waveValue.textContent = this.waveNumber.toString();
+    }
+    
+    // Show temporarily with highlight if requested
+    if (showTemporarily) {
+      this.waveIndicatorElement.style.backgroundColor = 'rgba(255, 87, 34, 0.7)';
+      setTimeout(() => {
+        if (this.waveIndicatorElement) {
+          this.waveIndicatorElement.style.backgroundColor = 'transparent';
+        }
+      }, 2000);
+    }
+  }
+  
+  /**
+   * Show a message that the game is running in single-player mode
+   */
+  private showSinglePlayerModeMessage(): void {
+    // Get the center panel from the UI container
+    const centerPanel = document.getElementById('game-ui-center-panel');
+    if (!centerPanel) return;
+    
+    // Create message element
+    const messageElement = document.createElement('div');
+    messageElement.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    messageElement.style.color = 'white';
+    messageElement.style.padding = '10px 20px';
+    messageElement.style.borderRadius = '5px';
+    messageElement.style.fontFamily = 'Arial, sans-serif';
+    messageElement.style.fontSize = '14px';
+    messageElement.style.textAlign = 'center';
+    messageElement.textContent = 'Running in single-player mode (server not available)';
+    
+    // Add to center panel
+    centerPanel.appendChild(messageElement);
+    
+    // Remove the message after 5 seconds
+    setTimeout(() => {
+      if (messageElement.parentNode) {
+        messageElement.parentNode.removeChild(messageElement);
+      }
+    }, 5000);
   }
 
   private spawnInitialZombies(count: number): void {
@@ -570,60 +670,6 @@ class GameEngine {
     return new THREE.Vector3(x, 0, z);
   }
 
-  private createWaveIndicator(): void {
-    if (this.waveIndicatorElement) {
-      document.body.removeChild(this.waveIndicatorElement);
-    }
-    
-    const waveIndicator = document.createElement('div');
-    waveIndicator.id = 'wave-indicator';
-    waveIndicator.style.position = 'absolute';
-    waveIndicator.style.top = '60px';
-    waveIndicator.style.left = '50%';
-    waveIndicator.style.transform = 'translateX(-50%)';
-    waveIndicator.style.backgroundColor = 'rgba(255, 0, 0, 0.7)';
-    waveIndicator.style.color = 'white';
-    waveIndicator.style.padding = '8px 16px';
-    waveIndicator.style.borderRadius = '5px';
-    waveIndicator.style.fontFamily = 'Arial, sans-serif';
-    waveIndicator.style.fontWeight = 'bold';
-    waveIndicator.style.fontSize = 'clamp(16px, 3vw, 20px)';
-    waveIndicator.style.zIndex = '1000';
-    waveIndicator.style.transition = 'opacity 0.5s ease-in-out';
-    waveIndicator.style.opacity = '1';
-    waveIndicator.style.maxWidth = '90%';
-    waveIndicator.style.textAlign = 'center';
-    waveIndicator.innerHTML = `Wave 1 - Spawn Rate: ${this.zombieSpawnRate.toFixed(1)}s`;
-    
-    document.body.appendChild(waveIndicator);
-    this.waveIndicatorElement = waveIndicator;
-    
-    setTimeout(() => {
-      if (this.waveIndicatorElement) {
-        this.waveIndicatorElement.style.opacity = '0';
-      }
-    }, 3000);
-  }
-  
-  private updateWaveIndicator(showTemporarily: boolean = false): void {
-    if (!this.waveIndicatorElement) {
-      this.createWaveIndicator();
-      return;
-    }
-    
-    this.waveIndicatorElement.innerHTML = `Wave ${this.waveNumber} - Spawn Rate: ${this.zombieSpawnRate.toFixed(1)}s`;
-    
-    if (showTemporarily) {
-      this.waveIndicatorElement.style.opacity = '1';
-      
-      setTimeout(() => {
-        if (this.waveIndicatorElement) {
-          this.waveIndicatorElement.style.opacity = '0';
-        }
-      }, 3000);
-    }
-  }
-
   private increaseDifficulty(): void {
     this.waveNumber++;
     
@@ -690,72 +736,83 @@ class GameEngine {
     const deltaTime = (currentTime - this.lastTime) / 1000;
     this.lastTime = currentTime;
     
-    // Skip if more than 1 second has passed (likely tab was inactive)
-    if (deltaTime > 1) {
+    // Skip if delta time is too large (e.g. after tab switch)
+    if (deltaTime > 0.5) {
       requestAnimationFrame(this.loop.bind(this));
       return;
     }
     
-    // Only run game logic if player is alive
-    if (!this.gameOver) {
-      // Update player and UI
+    // Update input system
+    this.inputSystem.update();
+    
+    // Update player if alive
+    if (this.player.isAlive) {
       this.player.update(deltaTime, this.inputSystem);
-      this.uiSystem.updateHealthBar(this.player);
       
-      // Update zombie spawning
-      this.zombieSpawnTime += deltaTime;
-      if (this.zombieSpawnTime >= this.zombieSpawnRate && this.zombies.length < this.maxZombies) {
-        this.spawnZombie();
-        this.zombieSpawnTime = 0;
+      // Send player position update to server every 100ms
+      if (Math.random() < 0.1) { // Approximately every 10 frames at 60fps
+        const position = this.player.getMesh().position;
+        const rotation = this.player.getMesh().rotation.y;
+        this.networkSystem.sendPlayerUpdate(
+          { x: position.x, y: position.y, z: position.z },
+          rotation
+        );
       }
-      
-      // Update all zombies
-      for (const zombie of this.zombies) {
-        if (zombie.isAlive) {
-          // Pass player position to zombie update instead of player object
-          zombie.update(deltaTime, this.player.getMesh().position);
-          this.uiSystem.updateHealthBar(zombie);
+    } else if (this.playerDead) {
+      // Handle respawn countdown
+      this.updateRespawnCountdown(deltaTime);
+    }
+    
+    // Update zombie spawning
+    this.zombieSpawnTime += deltaTime;
+    if (this.zombieSpawnTime >= this.zombieSpawnRate && this.zombies.length < this.maxZombies) {
+      this.spawnZombie();
+      this.zombieSpawnTime = 0;
+    }
+    
+    // Update all zombies
+    for (const zombie of this.zombies) {
+      if (zombie.isAlive) {
+        // Pass player position to zombie update instead of player object
+        zombie.update(deltaTime, this.player.getMesh().position);
+        this.uiSystem.updateHealthBar(zombie);
+        
+        // Check distance for zombie attack
+        const zombiePos = zombie.getMesh().position;
+        const playerPos = this.player.getMesh().position;
+        const dx = playerPos.x - zombiePos.x;
+        const dz = playerPos.z - zombiePos.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        
+        // Zombie damages player when close enough
+        if (distance < 1.5 && this.player.isAlive) {
+          const damage = 5 * deltaTime; // Damage scaled by time
+          this.player.takeDamage(damage);
           
-          // Check distance for zombie attack
-          const zombiePos = zombie.getMesh().position;
-          const playerPos = this.player.getMesh().position;
-          const dx = playerPos.x - zombiePos.x;
-          const dz = playerPos.z - zombiePos.z;
-          const distance = Math.sqrt(dx * dx + dz * dz);
-          
-          // Zombie damages player when close enough
-          if (distance < 1.5 && this.player.isAlive) {
-            const damage = 5 * deltaTime; // Damage scaled by time
-            this.player.takeDamage(damage);
-            
-            // Check if player died from this attack
-            if (!this.player.isAlive) {
-              this.handlePlayerDeath();
-            }
+          // Check if player died from this attack
+          if (!this.player.isAlive) {
+            this.handlePlayerDeath();
           }
         }
       }
-      
-      // Update scoreboard
-      this.updateScoreboard();
-      
-      // Scale difficulty over time
-      this.timeSinceLastDifficultyIncrease += deltaTime;
-      if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
-        this.increaseDifficulty();
-        this.timeSinceLastDifficultyIncrease = 0;
-      }
-      
-      // Update camera position to follow player
-      const playerPos = this.player.getMesh().position;
-      this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
-      
-      // Update all health bar positions to follow their entities
-      this.uiSystem.update(this.renderingSystem.getCamera());
-    } else if (this.playerDead) {
-      // Player is dead, update respawn countdown
-      this.updateRespawnCountdown(deltaTime);
     }
+    
+    // Update scoreboard
+    this.updateScoreboard();
+    
+    // Scale difficulty over time
+    this.timeSinceLastDifficultyIncrease += deltaTime;
+    if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
+      this.increaseDifficulty();
+      this.timeSinceLastDifficultyIncrease = 0;
+    }
+    
+    // Update camera position to follow player
+    const playerPos = this.player.getMesh().position;
+    this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
+    
+    // Update all health bar positions to follow their entities
+    this.uiSystem.update(this.renderingSystem.getCamera());
     
     // Render the scene
     this.renderingSystem.render();
@@ -1144,6 +1201,30 @@ class GameEngine {
       this.renderingSystem.removeFromScene(bulletLine);
       this.renderingSystem.removeFromScene(cone);
     }, 100);
+  }
+
+  /**
+   * Set up network event listeners for multiplayer functionality
+   */
+  private setupNetworkListeners(): void {
+    // Listen for player count updates
+    this.networkSystem.onPlayerCountUpdate((count: number) => {
+      this.uiSystem.setActivePlayers(count);
+    });
+    
+    // Listen for other player updates
+    this.networkSystem.onPlayerUpdate((players: any[]) => {
+      // Handle other player updates here
+      console.log(`Received update for ${players.length} other players`);
+    });
+    
+    // Show a message if running in single-player mode
+    setTimeout(() => {
+      if (!this.networkSystem.isServerConnected() && 
+          this.networkSystem.hasConnectionBeenAttempted()) {
+        this.showSinglePlayerModeMessage();
+      }
+    }, 3000); // Give it some time to try connecting
   }
 }
 
