@@ -124,6 +124,20 @@ class RenderingSystem {
     }
   }
 
+  /**
+   * Gets the THREE.js scene for use by other systems
+   */
+  public getScene(): THREE.Scene {
+    return this.scene;
+  }
+
+  /**
+   * Gets the camera for use by other systems
+   */
+  public getCamera(): THREE.PerspectiveCamera {
+    return this.camera;
+  }
+
   public render(): void {
     // Render the scene
     this.renderer.render(this.scene, this.camera);

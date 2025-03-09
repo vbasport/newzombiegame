@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useSocket } from '../systems/NetworkSystem';
 import InputSystem from '../systems/InputSystem';
+import { HealthBarEntity } from '../systems/UISystem';
 
 // React component for Three.js rendering
 const PlayerComponent = () => {
@@ -48,15 +49,22 @@ const PlayerComponent = () => {
 };
 
 // Player class for game logic
-class Player {
+class Player implements HealthBarEntity {
   public x: number = 0;
   public y: number = 0;
   public speed: number = 8;
   public health: number = 100;
+  public maxHealth: number = 100; // Added for health bar interface
   public isAlive: boolean = true;
   private mesh: THREE.Group;
   private direction: THREE.Vector3 = new THREE.Vector3(0, 0, -1); // Forward direction
   private animationTime: number = 0;
+  public kills: number = 0; // Track zombie kills for scoring
+  public timeSurvived: number = 0; // Track survival time in seconds
+  private initialState: {
+    position: THREE.Vector3,
+    rotation: THREE.Euler
+  };
   
   constructor() {
     // Create a group to hold all player components
@@ -137,6 +145,12 @@ class Player {
     
     // Set initial position
     this.mesh.position.set(this.x, 0, this.y);
+    
+    // Store initial state for respawning
+    this.initialState = {
+      position: this.mesh.position.clone(),
+      rotation: this.mesh.rotation.clone()
+    };
   }
   
   public getMesh(): THREE.Group {
@@ -144,6 +158,12 @@ class Player {
   }
   
   public update(deltaTime: number, inputSystem: InputSystem): void {
+    // Only update if alive
+    if (!this.isAlive) return;
+    
+    // Update survival time
+    this.timeSurvived += deltaTime;
+    
     // Update animation time
     this.animationTime += deltaTime;
     
@@ -223,6 +243,8 @@ class Player {
   }
   
   public takeDamage(amount: number): void {
+    if (!this.isAlive) return; // Don't damage if already dead
+    
     this.health -= amount;
     if (this.health <= 0) {
       this.health = 0;
@@ -232,6 +254,39 @@ class Player {
       this.mesh.rotation.x = Math.PI / 2;
       this.mesh.position.y = 0.3;
     }
+  }
+
+  public heal(amount: number): void {
+    if (!this.isAlive) return; // Don't heal if dead
+    
+    this.health = Math.min(this.health + amount, this.maxHealth);
+  }
+  
+  public revive(): void {
+    // Reset health and alive status
+    this.health = this.maxHealth;
+    this.isAlive = true;
+    
+    // Reset position and rotation
+    this.mesh.rotation.x = 0;
+    this.mesh.position.y = 0;
+    
+    // Reset animations
+    this.resetAnimation();
+    
+    console.log('Player revived with full health!');
+  }
+  
+  public addKill(): void {
+    this.kills++;
+  }
+  
+  public getStats(): { health: number, kills: number, timeSurvived: number } {
+    return {
+      health: this.health,
+      kills: this.kills,
+      timeSurvived: this.timeSurvived
+    };
   }
   
   public updatePosition(x: number, y: number): void {
