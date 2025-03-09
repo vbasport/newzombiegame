@@ -151,7 +151,23 @@ class Zombie implements HealthBarEntity {
   }
   
   public takeDamage(amount: number): void {
-    this.health -= amount;
+    if (!this.isAlive) {
+      console.log('Tried to damage already dead zombie');
+      return; // Don't damage if already dead
+    }
+    
+    // Ensure amount is a number and positive
+    const damageAmount = Math.abs(Number(amount)) || 0;
+    if (damageAmount === 0) {
+      console.warn('Invalid damage amount:', amount);
+      return;
+    }
+    
+    // Apply damage
+    this.health = Math.max(0, this.health - damageAmount);
+    console.log(`Zombie took ${damageAmount} damage. Health now: ${this.health}/${this.maxHealth}`);
+    
+    // Check if zombie died
     if (this.health <= 0) {
       this.health = 0;
       this.isAlive = false;
@@ -159,6 +175,8 @@ class Zombie implements HealthBarEntity {
       // Make the zombie fall down when dead
       this.mesh.rotation.x = Math.PI / 2;
       this.mesh.position.y = 0.3;
+      
+      console.log('Zombie died!');
     }
   }
   

@@ -492,6 +492,9 @@ class GameEngine {
     this.playerDead = false;
     this.respawnCountdown = 0;
     
+    // Clear all existing zombies
+    this.clearAllZombies();
+    
     // Find a safe location to respawn
     const safeLocation = this.findSafeSpawnLocation();
     
@@ -505,7 +508,28 @@ class GameEngine {
     // Reset game difficulty when player respawns
     this.resetGameDifficulty();
     
+    // Spawn initial zombies after a delay to give player time to orient
+    setTimeout(() => {
+      this.spawnInitialZombies(3);
+    }, 2000);
+    
     console.log('Player respawned at', safeLocation);
+  }
+  
+  // New method to clear all zombies
+  private clearAllZombies(): void {
+    // Remove all zombie meshes from the scene
+    for (const zombie of this.zombies) {
+      // Remove health bar
+      this.uiSystem.removeHealthBar(zombie);
+      
+      // Remove mesh from scene
+      this.renderingSystem.removeFromScene(zombie.getMesh());
+    }
+    
+    // Clear the zombies array
+    this.zombies = [];
+    console.log('Cleared all zombies for player respawn');
   }
   
   private findSafeSpawnLocation(): THREE.Vector3 {
@@ -808,62 +832,78 @@ class GameEngine {
     
     // Create bullet effect from player
     const playerMesh = this.player.getMesh();
-    const bulletStart = new THREE.Vector3(
+    
+    // Get the weapon position for bullet start
+    let bulletStart = new THREE.Vector3(
       playerMesh.position.x,
       playerMesh.position.y + 0.75, // Adjust height to be at "gun" level
       playerMesh.position.z
     );
     
     // Get direction player is facing
-    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(playerMesh.quaternion);
+    const direction = this.player.getForwardDirection();
     
-    // Use raycaster to detect zombie hits
-    const raycaster = new THREE.Raycaster(bulletStart, direction.normalize());
-    const zombieMeshes = this.zombies
-      .filter(z => z.isAlive)
-      .map(z => z.getMesh());
-    
-    // Cast ray to see if we hit any zombies
-    const intersects = raycaster.intersectObjects(zombieMeshes, true);
+    // Define bullet damage
+    const bulletDamage = 50; // High damage - one shot kills most zombies
     
     // Create a bullet trail effect
     this.createBulletTrail(bulletStart, direction);
     
-    if (intersects.length > 0) {
-      // We hit something! 
-      const hitObject = intersects[0].object;
-      
-      // Find which zombie was hit
-      let hitZombie: Zombie | null = null;
-      for (const zombie of this.zombies) {
-        if (!zombie.isAlive) continue;
+    // SIMPLIFIED APPROACH: Find zombies in front of the player within a certain range and angle
+    const maxRange = 50;
+    const maxAngleCos = 0.95; // About 18 degrees cone - narrower for more precise hits
+    
+    // Log all zombies for debugging
+    console.log(`Total zombies: ${this.zombies.length}, Alive zombies: ${this.zombies.filter(z => z.isAlive).length}`);
+    
+    // Sort zombies by distance
+    const targetableZombies = this.zombies
+      .filter(zombie => zombie.isAlive)
+      .map(zombie => {
+        const zombiePos = zombie.getMesh().position;
+        const toZombie = new THREE.Vector3().subVectors(zombiePos, bulletStart);
+        const distance = toZombie.length();
+        const angleCos = toZombie.normalize().dot(direction);
         
-        if (zombie.getMesh() === hitObject || zombie.getMesh().children.includes(hitObject)) {
-          hitZombie = zombie;
-          break;
-        }
-      }
-      
-      if (hitZombie) {
-        console.log('Hit zombie!');
-        hitZombie.takeDamage(50); // High damage - one shot kills most zombies
+        // Debug info for each zombie
+        console.log(`Zombie at (${zombiePos.x.toFixed(1)}, ${zombiePos.z.toFixed(1)}), distance: ${distance.toFixed(1)}, angle cos: ${angleCos.toFixed(2)}`);
         
-        if (!hitZombie.isAlive) {
-          // Update player kills and game score
-          this.player.addKill();
-          this.gameScore += 100; // Base score for zombie kill
-          
-          // Bonus points for distance
-          const distance = hitZombie.getMesh().position.distanceTo(playerMesh.position);
-          const distanceBonus = Math.floor(distance * 10);
-          this.gameScore += distanceBonus;
-          
-          console.log(`Killed zombie at distance ${distance.toFixed(2)}m! +${100 + distanceBonus} points`);
-        }
+        return { zombie, distance, angleCos };
+      })
+      .filter(({ distance, angleCos }) => distance <= maxRange && angleCos > maxAngleCos)
+      .sort((a, b) => a.distance - b.distance);
+    
+    // Debug info
+    console.log(`Found ${targetableZombies.length} zombies in firing cone`);
+    
+    // Hit the closest zombie if any are in range
+    if (targetableZombies.length > 0) {
+      const { zombie: hitZombie, distance } = targetableZombies[0];
+      
+      console.log(`Hit zombie at distance: ${distance.toFixed(2)}, health before: ${hitZombie.health}`);
+      
+      // Apply damage
+      hitZombie.takeDamage(bulletDamage);
+      
+      console.log(`Zombie health after hit: ${hitZombie.health}`);
+      
+      // Force update the zombie's health bar
+      this.uiSystem.updateHealthBar(hitZombie);
+      
+      if (!hitZombie.isAlive) {
+        // Update player kills and game score
+        this.player.addKill();
+        this.gameScore += 100; // Base score for zombie kill
+        
+        // Bonus points for distance
+        const distanceBonus = Math.floor(distance * 10);
+        this.gameScore += distanceBonus;
+        
+        console.log(`Killed zombie at distance ${distance.toFixed(2)}m! +${100 + distanceBonus} points`);
       }
     } else {
       // Missed shot
-      console.log('Shot fired but missed!');
+      console.log('Shot fired but missed! No zombies in firing cone.');
     }
   }
 
@@ -1063,20 +1103,46 @@ class GameEngine {
     const bulletLength = 50; // How far the bullet travels
     const end = new THREE.Vector3().copy(start).addScaledVector(direction, bulletLength);
     
+    // Create a more visible bullet trail with a thicker line
     const bulletGeometry = new THREE.BufferGeometry().setFromPoints([start, end]);
     const bulletMaterial = new THREE.LineBasicMaterial({ 
       color: 0xffff00,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.8,
+      linewidth: 2 // Reduced linewidth for a narrower appearance
     });
     const bulletLine = new THREE.Line(bulletGeometry, bulletMaterial);
     
-    // Add the bullet trail to the scene
-    this.renderingSystem.addToScene(bulletLine);
+    // Add a small cone at the start to represent the bullet width/spread
+    const coneLength = 0.3;
+    const coneRadius = 0.05; // Reduced radius for a narrower bullet spread (was 0.1)
+    const coneGeometry = new THREE.ConeGeometry(coneRadius, coneLength, 8);
+    const coneMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      transparent: true,
+      opacity: 0.6
+    });
     
-    // Remove the bullet trail after a short time
+    const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+    
+    // Position and orient the cone to point in the direction of the bullet
+    cone.position.copy(start);
+    
+    // Create a quaternion to rotate the cone to align with the direction vector
+    const quaternion = new THREE.Quaternion();
+    // Default cone points up (0, 1, 0), we need to rotate it to match our direction
+    const upVector = new THREE.Vector3(0, 1, 0);
+    quaternion.setFromUnitVectors(upVector, direction);
+    cone.setRotationFromQuaternion(quaternion);
+    
+    // Add the bullet trail and cone to the scene
+    this.renderingSystem.addToScene(bulletLine);
+    this.renderingSystem.addToScene(cone);
+    
+    // Remove the bullet trail and cone after a short time
     setTimeout(() => {
       this.renderingSystem.removeFromScene(bulletLine);
+      this.renderingSystem.removeFromScene(cone);
     }, 100);
   }
 }

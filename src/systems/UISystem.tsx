@@ -81,11 +81,14 @@ class UISystem {
   }
 
   /**
-   * Updates the health bar to reflect entity's current health
+   * Updates the health bar to reflect current health
    */
   public updateHealthBar(entity: HealthBarEntity): void {
     const healthBar = this.healthBars.get(entity);
-    if (!healthBar) return;
+    if (!healthBar) {
+      console.warn('Tried to update health bar for entity without one');
+      return;
+    }
     
     // Calculate health percentage
     const healthPercent = Math.max(0, Math.min(1, entity.health / entity.maxHealth));
@@ -98,6 +101,9 @@ class UISystem {
     
     // Hide health bar if entity is dead
     healthBar.container.visible = entity.isAlive;
+    
+    // Debug info
+    console.log(`Updated health bar: ${entity.health}/${entity.maxHealth} (${(healthPercent * 100).toFixed(0)}%)`);
   }
 
   /**
