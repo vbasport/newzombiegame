@@ -1,7 +1,6 @@
-// This file handles UI elements such as health bars and game status displays
+// This file handles UI elements like health bars and text
 import * as THREE from 'three';
-import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
-import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
+// CSS2DRenderer will be used for multiplayer features later
 
 // Interface for entities that can have health bars
 export interface HealthBarEntity {
@@ -45,29 +44,9 @@ class UISystem {
     foreground: THREE.Mesh,
     nameTag?: THREE.Sprite
   }> = new Map();
-  private activePlayers: number = 1; // Start with the local player
   
   constructor(scene: THREE.Scene) {
     this.scene = scene;
-  }
-
-  /**
-   * Sets the number of active players and updates the display
-   */
-  public setActivePlayers(count: number): void {
-    this.activePlayers = count;
-    this.updateActivePlayersDisplay();
-  }
-
-  /**
-   * Updates the active players display
-   */
-  private updateActivePlayersDisplay(): void {
-    // Find the player count element in the UI
-    const playersValue = document.getElementById('players-value');
-    if (playersValue) {
-      playersValue.textContent = this.activePlayers.toString();
-    }
   }
 
   /**

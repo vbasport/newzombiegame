@@ -20,9 +20,6 @@ class InputSystem {
     reload: false
   };
   private isMobileInput: boolean = false;
-  private lastUpdateTime: number = 0;
-  private isAimActive: boolean = false; // Track if aim joystick is being used
-  private isShootingActive: boolean = false;  // Track if player is shooting
 
   constructor() {
     window.addEventListener('keydown', this.handleKeyDown.bind(this));
@@ -30,17 +27,12 @@ class InputSystem {
     
     // Detect if mobile device and set flag
     this.isMobileInput = this.detectMobile();
-    this.lastUpdateTime = performance.now();
   }
   
   /**
    * Update method called each frame to process input
    */
   public update(): void {
-    const currentTime = performance.now();
-    const deltaTime = (currentTime - this.lastUpdateTime) / 1000;
-    this.lastUpdateTime = currentTime;
-    
     // Process any continuous input logic here
     // For example, handling long presses or input smoothing
     
@@ -92,12 +84,11 @@ class InputSystem {
   public setAimJoystickInput(x: number, y: number, isActive: boolean): void {
     this.aimJoystick.x = x;
     this.aimJoystick.y = y;
-    this.isAimActive = isActive;
     
     // If joystick is active and has meaningful input, set shooting intent to true
     // The actual shooting will be controlled by the cooldown in GameEngine
     const hasInput = Math.abs(x) > 0.2 || Math.abs(y) > 0.2;
-    this.isShootingActive = isActive && hasInput;
+    this.keys[' '] = isActive && hasInput;
   }
   
   /**
@@ -141,7 +132,7 @@ class InputSystem {
     return { 
       x: this.aimJoystick.x, 
       y: this.aimJoystick.y,
-      isActive: this.isAimActive
+      isActive: this.keys[' ']
     };
   }
   
@@ -150,7 +141,7 @@ class InputSystem {
    * Note: The actual shooting will be controlled by the cooldown in GameEngine
    */
   public isShooting(): boolean {
-    return this.isShootingActive || this.keys[' '];
+    return this.keys[' '];
   }
   
   /**

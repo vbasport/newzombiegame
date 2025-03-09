@@ -18,14 +18,14 @@ class GameEngine {
   private zombieSpawnTime: number = 0;
   private initialZombieSpawnRate: number = 5; // Initial time between spawns in seconds
   private zombieSpawnRate: number = 5; // Current spawn rate (will decrease over time)
-  private maxZombies: number = 50; // Increased to allow more zombies on screen
+  private maxZombies: number = 200; // Increased to allow many more zombies on screen
   private difficultyScalingFactor: number = 0.92; // How quickly difficulty increases (< 1.0) - made more aggressive
   private difficultyIncreaseInterval: number = 10; // Seconds between difficulty increases
   private timeSinceLastDifficultyIncrease: number = 0;
   private minSpawnRate: number = 0.3; // Fastest possible spawn rate (seconds) - made faster
   private waveNumber: number = 1; // Track the current wave number
   private gameScore: number = 0;
-  private gameOver: boolean = false;
+  private _gameOver: boolean = false; // Renamed with underscore to indicate private usage
   private debugMode: boolean = false; // For testing and debugging
   private respawnCountdown: number = 0; // Respawn timer in seconds
   private respawnTime: number = 5; // Reduced from 10 to 5 seconds
@@ -41,6 +41,8 @@ class GameEngine {
   private meleeCooldownIndicator: HTMLElement | null = null; // Visual indicator for melee cooldown
   private lastShootTime: number = 0; // Track when the last shot was fired
   private shootCooldownIndicator: HTMLElement | null = null; // Visual indicator for shoot cooldown
+  private zombieCleanupInterval: number = 2; // How often to check for dead zombies (seconds)
+  private lastZombieCleanupTime: number = 0; // Last time zombies were cleaned up
 
   constructor(playerName: string = 'Player') {
     this.playerName = playerName;
@@ -52,6 +54,10 @@ class GameEngine {
     this.player = new Player(this.playerName);
     this.renderingSystem.addToScene(this.player.getMesh());
     this.uiSystem.createHealthBar(this.player, true);
+    
+    // Initialize time trackers
+    this.lastTime = performance.now();
+    this.lastZombieCleanupTime = performance.now() / 1000;
     
     // Create unified UI container first
     this.createUnifiedUI();
@@ -609,24 +615,13 @@ class GameEngine {
     waveElement.id = 'wave-indicator';
     waveElement.innerHTML = `<strong>Wave:</strong> <span id="wave-value" style="color: #e91e63; font-weight: bold;">${this.waveNumber}</span>`;
     waveElement.style.flex = '1';
-    waveElement.style.textAlign = 'left';
+    waveElement.style.textAlign = 'center';
     
-    // Create player count element (will be updated by NetworkSystem)
-    const playersElement = document.createElement('div');
-    playersElement.id = 'active-players';
-    playersElement.innerHTML = `<strong>Players Online:</strong> <span id="players-value" style="color: #03a9f4; font-weight: bold;">1</span>`;
-    playersElement.style.flex = '1';
-    playersElement.style.textAlign = 'right';
-    
-    // Add elements directly to the container
+    // Add element to the container
     container.appendChild(waveElement);
-    container.appendChild(playersElement);
     
     // Store reference to the wave indicator
     this.waveIndicatorElement = waveElement;
-    
-    // Set initial player count
-    this.uiSystem.setActivePlayers(1);
   }
   
   /**
@@ -710,7 +705,7 @@ class GameEngine {
     messageElement.style.fontFamily = 'Arial, sans-serif';
     messageElement.style.fontSize = '14px';
     messageElement.style.textAlign = 'center';
-    messageElement.textContent = 'Running in single-player mode (server not available)';
+    messageElement.textContent = 'Running in single-player mode (multiplayer coming soon)';
     
     // Add to center panel
     centerPanel.appendChild(messageElement);
@@ -817,8 +812,73 @@ class GameEngine {
         }, 200);
       }
       
+      // When countdown reaches 0, enable the respawn button
       if (this.respawnCountdown <= 0) {
-        this.respawnPlayer();
+        // Update the respawn button if on mobile
+        if (this.isMobile) {
+          const respawnButton = document.getElementById('respawn-button');
+          const respawnMessage = countdownElement?.nextElementSibling;
+          
+          if (respawnButton) {
+            // Enable the button
+            respawnButton.removeAttribute('disabled');
+            respawnButton.style.backgroundColor = '#ff3333';
+            respawnButton.style.color = 'white';
+            respawnButton.style.cursor = 'pointer';
+            respawnButton.style.opacity = '1';
+            respawnButton.style.pointerEvents = 'auto';
+            respawnButton.textContent = 'RESPAWN NOW';
+            
+            // Update message
+            if (respawnMessage) {
+              respawnMessage.textContent = 'Tap to respawn';
+            }
+            
+            // Add event listeners
+            respawnButton.addEventListener('touchstart', () => {
+              if (respawnButton) {
+                respawnButton.style.backgroundColor = '#cc0000';
+                respawnButton.style.transform = 'scale(0.98)';
+              }
+            });
+            
+            respawnButton.addEventListener('touchend', () => {
+              if (respawnButton) {
+                respawnButton.style.backgroundColor = '#ff3333';
+                respawnButton.style.transform = 'scale(1)';
+              }
+              this.respawnPlayer();
+            });
+          }
+        } else {
+          // Update desktop message
+          const respawnMessage = countdownElement?.nextElementSibling;
+          const keyboardMessage = respawnMessage?.nextElementSibling;
+          
+          if (respawnMessage) {
+            respawnMessage.textContent = 'Ready to respawn';
+          }
+          
+          if (keyboardMessage) {
+            (keyboardMessage as HTMLElement).style.color = '#ffffff';
+            keyboardMessage.textContent = 'Press R to respawn now';
+          }
+          
+          // Add keyboard event listener for R key
+          const handleRespawnKeyPress = (e: KeyboardEvent) => {
+            if (e.code === 'KeyR') {
+              this.respawnPlayer();
+              // Remove the event listener after respawn
+              window.removeEventListener('keydown', handleRespawnKeyPress);
+            }
+          };
+          
+          window.addEventListener('keydown', handleRespawnKeyPress);
+        }
+        
+        // Don't automatically respawn - wait for player input
+        // Keep the countdown at 0 to prevent multiple calls
+        this.respawnCountdown = 0;
       }
     }
   }
@@ -840,11 +900,13 @@ class GameEngine {
   }
   
   private respawnPlayer(): void {
+    console.log('Respawning player...');
+    
     // Clean up any existing respawn UI elements
     this.cleanupRespawnUI();
     
     // Reset player state
-    this.gameOver = false;
+    this._gameOver = false;
     this.playerDead = false;
     this.respawnCountdown = 0;
     
@@ -863,6 +925,7 @@ class GameEngine {
     
     // Reset game difficulty when player respawns
     this.resetGameDifficulty();
+    // Note: resetGameDifficulty already shows the reset notification, so we don't need to call it again here
     
     // Spawn initial zombies after a delay to give player time to orient
     setTimeout(() => {
@@ -967,38 +1030,56 @@ class GameEngine {
   }
   
   private showWaveNotification(): void {
+    // Get the center panel from the UI container
+    const centerPanel = document.getElementById('game-ui-center-panel');
+    if (!centerPanel) return;
+    
+    // Create wave notification banner
     const notification = document.createElement('div');
     notification.id = 'wave-notification';
-    notification.style.position = 'absolute';
-    notification.style.top = '40%';
-    notification.style.left = '50%';
-    notification.style.transform = 'translate(-50%, -50%)';
-    notification.style.color = 'red';
-    notification.style.fontSize = '48px';
+    notification.style.backgroundColor = 'rgba(200, 0, 0, 0.8)';
+    notification.style.color = 'white';
+    notification.style.padding = '8px 15px';
+    notification.style.borderRadius = '5px';
+    notification.style.fontFamily = 'Arial, sans-serif';
+    notification.style.fontSize = '16px';
     notification.style.fontWeight = 'bold';
-    notification.style.textShadow = '2px 2px 4px #000000';
-    notification.style.zIndex = '1001';
-    notification.style.transition = 'opacity 0.5s ease-in-out, transform 0.5s ease-in-out';
-    notification.style.opacity = '0';
     notification.style.textAlign = 'center';
-    notification.innerHTML = `<div>Wave ${this.waveNumber}</div><div style="font-size: 24px;">They're getting faster!</div>`;
+    notification.style.width = '80%';
+    notification.style.maxWidth = '500px';
+    notification.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.5)';
+    notification.style.transform = 'translateY(-20px)';
+    notification.style.opacity = '0';
+    notification.style.transition = 'transform 0.3s ease-out, opacity 0.3s ease-out';
     
-    document.body.appendChild(notification);
+    // Create wave text with icon
+    notification.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+        <span style="font-size: 20px;">⚠️</span>
+        <span>Wave ${this.waveNumber} - Zombies are getting stronger!</span>
+      </div>
+    `;
     
+    // Add to center panel
+    centerPanel.appendChild(notification);
+    
+    // Animate in
     setTimeout(() => {
+      notification.style.transform = 'translateY(0)';
       notification.style.opacity = '1';
     }, 10);
     
+    // Animate out and remove after a delay
     setTimeout(() => {
+      notification.style.transform = 'translateY(-20px)';
       notification.style.opacity = '0';
-      notification.style.transform = 'translate(-50%, -70%)';
       
       setTimeout(() => {
         if (notification.parentNode) {
           notification.parentNode.removeChild(notification);
         }
-      }, 500);
-    }, 2500);
+      }, 300);
+    }, 3000);
   }
 
   public start(): void {
@@ -1014,6 +1095,22 @@ class GameEngine {
     
     // Skip if delta time is too large (e.g. after tab switch)
     if (deltaTime > 0.5) {
+      requestAnimationFrame(this.loop.bind(this));
+      return;
+    }
+    
+    // Handle respawn countdown if player is dead
+    if (this.playerDead) {
+      this.updateRespawnCountdown(deltaTime);
+      this.renderingSystem.render();
+      requestAnimationFrame(this.loop.bind(this));
+      return;
+    }
+    
+    // Skip update if game is over (and not in respawn state)
+    if (this._gameOver) {
+      // Just render the scene
+      this.renderingSystem.render();
       requestAnimationFrame(this.loop.bind(this));
       return;
     }
@@ -1035,9 +1132,6 @@ class GameEngine {
           rotation
         );
       }
-    } else if (this.playerDead) {
-      // Handle respawn countdown
-      this.updateRespawnCountdown(deltaTime);
     }
     
     // Handle player input
@@ -1045,7 +1139,7 @@ class GameEngine {
     
     // Update zombie spawning
     this.zombieSpawnTime += deltaTime;
-    if (this.zombieSpawnTime >= this.zombieSpawnRate && this.zombies.length < this.maxZombies) {
+    if (this.zombieSpawnTime >= this.zombieSpawnRate) {
       this.spawnZombie();
       this.zombieSpawnTime = 0;
     }
@@ -1083,8 +1177,12 @@ class GameEngine {
       }
     }
     
-    // Clean up dead zombies periodically
-    this.cleanupDeadZombies();
+    // Clean up dead zombies periodically to avoid performance issues
+    const now = performance.now() / 1000;
+    if (now - this.lastZombieCleanupTime > this.zombieCleanupInterval) {
+      this.cleanupDeadZombies();
+      this.lastZombieCleanupTime = now;
+    }
     
     // Update scoreboard
     this.updateScoreboard();
@@ -1120,8 +1218,8 @@ class GameEngine {
   
   private handleKeyDown(event: KeyboardEvent): void {
     if (this.playerDead) {
-      if (event.code === 'KeyR') {
-        this.respawnCountdown = 0;
+      if (event.code === 'KeyR' && this.respawnCountdown <= 0) {
+        this.respawnPlayer();
         console.log('Manual respawn triggered');
       }
       return;
@@ -1220,7 +1318,7 @@ class GameEngine {
     const weapon = this.player.getWeapon();
     
     // Create bullet effect from player
-    const playerMesh = this.player.getMesh();
+    // We don't need playerMesh here, so removing it
     
     // Get the weapon position for bullet start
     const bulletStart = this.player.getWeaponTipPosition();
@@ -1296,8 +1394,10 @@ class GameEngine {
   }
 
   private handlePlayerDeath(): void {
-    this.gameOver = true;
+    // Set player state to dead but keep _gameOver separate
+    // This allows the respawn countdown to work
     this.playerDead = true;
+    this._gameOver = true;
     
     console.log('Player died! Score: ' + this.gameScore);
     
@@ -1336,12 +1436,13 @@ class GameEngine {
     let respawnControlsHTML = '';
     
     if (this.isMobile) {
-      // Mobile version with button
+      // Mobile version with button - initially greyed out
       respawnControlsHTML = `
         <div id="respawn-countdown" style="color: red; font-size: 64px; font-weight: bold; margin-bottom: 20px;">${Math.ceil(this.respawnCountdown)}</div>
+        <div style="font-size: 16px; color: #aaa; margin-bottom: 15px;">Wait for countdown to finish...</div>
         <button id="respawn-button" style="
-          background-color: #ff3333;
-          color: white;
+          background-color: #777777;
+          color: #aaaaaa;
           border: none;
           padding: 15px 30px;
           border-radius: 50px;
@@ -1349,17 +1450,20 @@ class GameEngine {
           font-weight: bold;
           margin-top: 10px;
           box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-          cursor: pointer;
+          cursor: not-allowed;
           width: 80%;
-          transition: background-color 0.2s;
+          transition: all 0.3s;
           -webkit-tap-highlight-color: transparent;
-        ">RESPAWN NOW</button>
+          opacity: 0.7;
+          pointer-events: none;
+        " disabled>WAIT TO RESPAWN</button>
       `;
     } else {
       // Desktop version with keyboard instruction
       respawnControlsHTML = `
         <div id="respawn-countdown" style="color: red; font-size: 64px; font-weight: bold; margin-bottom: 20px;">${Math.ceil(this.respawnCountdown)}</div>
-        <div style="font-size: 16px; color: #aaa;">Press R to respawn immediately</div>
+        <div style="font-size: 16px; color: #aaa; margin-bottom: 15px;">Wait for countdown to finish...</div>
+        <div style="font-size: 16px; color: #777;">Press R when countdown finishes</div>
       `;
     }
     
@@ -1375,27 +1479,7 @@ class GameEngine {
     
     document.body.appendChild(deathOverlay);
     
-    // Add event listener for the respawn button if on mobile
-    if (this.isMobile) {
-      const respawnButton = document.getElementById('respawn-button');
-      if (respawnButton) {
-        // Add active state styling for touch feedback
-        respawnButton.addEventListener('touchstart', () => {
-          if (respawnButton) {
-            respawnButton.style.backgroundColor = '#cc0000';
-            respawnButton.style.transform = 'scale(0.98)';
-          }
-        });
-        
-        respawnButton.addEventListener('touchend', () => {
-          if (respawnButton) {
-            respawnButton.style.backgroundColor = '#ff3333';
-            respawnButton.style.transform = 'scale(1)';
-          }
-          this.respawnCountdown = 0; // Trigger immediate respawn
-        });
-      }
-    }
+    // We'll enable the button when the countdown finishes
   }
 
   private resetGameDifficulty(): void {
@@ -1412,40 +1496,62 @@ class GameEngine {
   }
   
   private showResetNotification(): void {
+    // Get the center panel from the UI container
+    const centerPanel = document.getElementById('game-ui-center-panel');
+    if (!centerPanel) return;
+    
+    // Remove any existing reset notifications first
+    const existingNotification = document.getElementById('reset-notification');
+    if (existingNotification && existingNotification.parentNode) {
+      existingNotification.parentNode.removeChild(existingNotification);
+    }
+    
+    // Create reset notification banner
     const notification = document.createElement('div');
     notification.id = 'reset-notification';
-    notification.style.position = 'absolute';
-    notification.style.top = '40%';
-    notification.style.left = '50%';
-    notification.style.transform = 'translate(-50%, -50%)';
+    notification.style.backgroundColor = 'rgba(0, 100, 200, 0.8)';
     notification.style.color = 'white';
-    notification.style.fontSize = '36px';
+    notification.style.padding = '8px 15px';
+    notification.style.borderRadius = '5px';
+    notification.style.fontFamily = 'Arial, sans-serif';
+    notification.style.fontSize = '16px';
     notification.style.fontWeight = 'bold';
-    notification.style.textShadow = '2px 2px 4px #000000';
-    notification.style.zIndex = '1001';
-    notification.style.transition = 'opacity 0.5s ease-in-out, transform 0.5s ease-in-out';
-    notification.style.opacity = '0';
     notification.style.textAlign = 'center';
-    notification.innerHTML = `<div>Game Reset</div><div style="font-size: 24px;">Starting from Wave 1</div>`;
+    notification.style.width = '80%';
+    notification.style.maxWidth = '500px';
+    notification.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.5)';
+    notification.style.transform = 'translateY(-20px)';
+    notification.style.opacity = '0';
+    notification.style.transition = 'transform 0.3s ease-out, opacity 0.3s ease-out';
     
-    document.body.appendChild(notification);
+    // Create reset text with icon
+    notification.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+        <span style="font-size: 20px;">🔄</span>
+        <span>Game Reset - Starting from Wave 1</span>
+      </div>
+    `;
+    
+    // Add to center panel
+    centerPanel.appendChild(notification);
     
     // Animate in
     setTimeout(() => {
+      notification.style.transform = 'translateY(0)';
       notification.style.opacity = '1';
     }, 10);
     
     // Animate out and remove after a delay
     setTimeout(() => {
+      notification.style.transform = 'translateY(-20px)';
       notification.style.opacity = '0';
-      notification.style.transform = 'translate(-50%, -70%)';
       
       setTimeout(() => {
         if (notification.parentNode) {
           notification.parentNode.removeChild(notification);
         }
-      }, 500);
-    }, 2500);
+      }, 300);
+    }, 3000);
   }
 
   public stop(): void {
@@ -1476,22 +1582,19 @@ class GameEngine {
       document.body.removeChild(this.shootCooldownIndicator);
     }
     
-    const waveNotification = document.getElementById('wave-notification');
-    if (waveNotification) {
-      document.body.removeChild(waveNotification);
+    // Clean up UI containers
+    const uiContainer = document.getElementById('game-ui-container');
+    if (uiContainer) {
+      document.body.removeChild(uiContainer);
     }
     
-    const resetNotification = document.getElementById('reset-notification');
-    if (resetNotification) {
-      document.body.removeChild(resetNotification);
+    const centerPanel = document.getElementById('game-ui-center-panel');
+    if (centerPanel) {
+      document.body.removeChild(centerPanel);
     }
     
     // Clean up systems
     this.uiSystem.cleanup();
-    
-    // Stop the game loop
-    this.gameOver = true;
-    console.log('Game stopped!');
   }
 
   private createBulletTrail(start: THREE.Vector3, direction: THREE.Vector3): void {
@@ -1543,59 +1646,46 @@ class GameEngine {
   }
 
   /**
-   * Set up network event listeners for multiplayer functionality
+   * Set up network event listeners
+   * This is a placeholder for future multiplayer functionality
    */
   private setupNetworkListeners(): void {
-    // Listen for player count updates
-    this.networkSystem.onPlayerCountUpdate((count: number) => {
-      this.uiSystem.setActivePlayers(count);
-    });
-    
-    // Listen for other player updates
-    this.networkSystem.onPlayerUpdate((players: any[]) => {
-      // Handle other player updates here
-      console.log(`Received update for ${players.length} other players`);
-    });
-    
     // Show a message if running in single-player mode
     setTimeout(() => {
-      if (!this.networkSystem.isServerConnected() && 
-          this.networkSystem.hasConnectionBeenAttempted()) {
-        this.showSinglePlayerModeMessage();
-      }
-    }, 3000); // Give it some time to try connecting
+      this.showSinglePlayerModeMessage();
+    }, 3000);
   }
 
-  // Add a method to clean up dead zombies
+  // Improved method to clean up dead zombies
   private cleanupDeadZombies(): void {
-    // Filter out dead zombies that have been dead for more than 5 seconds
+    // Filter out dead zombies that have been dead for more than 3 seconds
     const currentTime = performance.now() / 1000;
+    let removedCount = 0;
     
     for (let i = this.zombies.length - 1; i >= 0; i--) {
       const zombie = this.zombies[i];
       
-      if (!zombie.isAlive && zombie.deathTime && (currentTime - zombie.deathTime > 5)) {
+      // Check if zombie is dead and has been dead long enough
+      if (!zombie.isAlive && zombie.deathTime && (currentTime - zombie.deathTime > 3)) {
         // Remove from scene and UI
         this.uiSystem.removeHealthBar(zombie);
         this.renderingSystem.removeFromScene(zombie.getMesh());
         
         // Remove from array
         this.zombies.splice(i, 1);
+        removedCount++;
       }
+    }
+    
+    // Log cleanup info if any zombies were removed
+    if (removedCount > 0) {
+      console.log(`Cleaned up ${removedCount} dead zombies. Remaining: ${this.zombies.length}`);
     }
   }
 
   private showWeaponCooldownFeedback(): void {
-    // Get the weapon from the player mesh
-    const playerMesh = this.player.getMesh();
-    const weaponPosition = new THREE.Vector3(
-      playerMesh.position.x,
-      playerMesh.position.y + 0.75, // Adjust height to be at "gun" level
-      playerMesh.position.z
-    );
-    
-    // Get direction player is facing
-    const direction = this.player.getForwardDirection();
+    // Get the weapon position from the player
+    const weaponPosition = this.player.getWeaponTipPosition();
     
     // Create a small flash at the weapon position
     const flashGeometry = new THREE.SphereGeometry(0.1, 8, 8);
@@ -1608,11 +1698,7 @@ class GameEngine {
     const flash = new THREE.Mesh(flashGeometry, flashMaterial);
     
     // Position the flash at the weapon tip
-    flash.position.set(
-      weaponPosition.x + direction.x * 0.6,
-      weaponPosition.y,
-      weaponPosition.z + direction.z * 0.6
-    );
+    flash.position.copy(weaponPosition);
     
     // Add to scene
     this.renderingSystem.addToScene(flash);
