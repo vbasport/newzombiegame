@@ -390,7 +390,7 @@ class GameEngine {
     // Update score
     const scoreValue = this.scoreboardElement.querySelector('#score-value');
     if (scoreValue) {
-      scoreValue.textContent = this.gameScore.toString();
+    scoreValue.textContent = this.gameScore.toString();
     }
     
     // Update health
@@ -402,14 +402,14 @@ class GameEngine {
     // Update kills
     const killsValue = this.scoreboardElement.querySelector('#kills-value');
     if (killsValue) {
-      killsValue.textContent = this.player.kills.toString();
+    killsValue.textContent = this.player.kills.toString();
     }
     
     // Update time
     const timeValue = this.scoreboardElement.querySelector('#time-value');
     if (timeValue) {
-      const minutes = Math.floor(this.player.timeSurvived / 60);
-      const seconds = Math.floor(this.player.timeSurvived % 60);
+    const minutes = Math.floor(this.player.timeSurvived / 60);
+    const seconds = Math.floor(this.player.timeSurvived % 60);
       timeValue.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
   }
@@ -762,57 +762,57 @@ class GameEngine {
       // Handle respawn countdown
       this.updateRespawnCountdown(deltaTime);
     }
-    
-    // Update zombie spawning
-    this.zombieSpawnTime += deltaTime;
-    if (this.zombieSpawnTime >= this.zombieSpawnRate && this.zombies.length < this.maxZombies) {
-      this.spawnZombie();
-      this.zombieSpawnTime = 0;
-    }
-    
-    // Update all zombies
-    for (const zombie of this.zombies) {
-      if (zombie.isAlive) {
-        // Pass player position to zombie update instead of player object
-        zombie.update(deltaTime, this.player.getMesh().position);
-        this.uiSystem.updateHealthBar(zombie);
-        
-        // Check distance for zombie attack
-        const zombiePos = zombie.getMesh().position;
-        const playerPos = this.player.getMesh().position;
-        const dx = playerPos.x - zombiePos.x;
-        const dz = playerPos.z - zombiePos.z;
-        const distance = Math.sqrt(dx * dx + dz * dz);
-        
-        // Zombie damages player when close enough
-        if (distance < 1.5 && this.player.isAlive) {
-          const damage = 5 * deltaTime; // Damage scaled by time
-          this.player.takeDamage(damage);
+      
+      // Update zombie spawning
+      this.zombieSpawnTime += deltaTime;
+      if (this.zombieSpawnTime >= this.zombieSpawnRate && this.zombies.length < this.maxZombies) {
+        this.spawnZombie();
+        this.zombieSpawnTime = 0;
+      }
+      
+      // Update all zombies
+      for (const zombie of this.zombies) {
+        if (zombie.isAlive) {
+          // Pass player position to zombie update instead of player object
+          zombie.update(deltaTime, this.player.getMesh().position);
+          this.uiSystem.updateHealthBar(zombie);
           
-          // Check if player died from this attack
-          if (!this.player.isAlive) {
-            this.handlePlayerDeath();
+          // Check distance for zombie attack
+          const zombiePos = zombie.getMesh().position;
+          const playerPos = this.player.getMesh().position;
+          const dx = playerPos.x - zombiePos.x;
+          const dz = playerPos.z - zombiePos.z;
+          const distance = Math.sqrt(dx * dx + dz * dz);
+          
+          // Zombie damages player when close enough
+          if (distance < 1.5 && this.player.isAlive) {
+            const damage = 5 * deltaTime; // Damage scaled by time
+            this.player.takeDamage(damage);
+            
+            // Check if player died from this attack
+            if (!this.player.isAlive) {
+              this.handlePlayerDeath();
+            }
           }
         }
       }
-    }
-    
-    // Update scoreboard
-    this.updateScoreboard();
-    
-    // Scale difficulty over time
-    this.timeSinceLastDifficultyIncrease += deltaTime;
-    if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
-      this.increaseDifficulty();
-      this.timeSinceLastDifficultyIncrease = 0;
-    }
-    
-    // Update camera position to follow player
-    const playerPos = this.player.getMesh().position;
-    this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
-    
-    // Update all health bar positions to follow their entities
-    this.uiSystem.update(this.renderingSystem.getCamera());
+      
+      // Update scoreboard
+      this.updateScoreboard();
+      
+      // Scale difficulty over time
+      this.timeSinceLastDifficultyIncrease += deltaTime;
+      if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
+        this.increaseDifficulty();
+        this.timeSinceLastDifficultyIncrease = 0;
+      }
+      
+      // Update camera position to follow player
+      const playerPos = this.player.getMesh().position;
+      this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
+      
+      // Update all health bar positions to follow their entities
+      this.uiSystem.update(this.renderingSystem.getCamera());
     
     // Render the scene
     this.renderingSystem.render();
