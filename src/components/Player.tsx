@@ -65,6 +65,7 @@ class Player implements HealthBarEntity {
     position: THREE.Vector3,
     rotation: THREE.Euler
   };
+  private mobileFacingDirection: THREE.Vector3 = new THREE.Vector3(0, 0, -1);
   
   constructor() {
     // Create a group to hold all player components
@@ -169,6 +170,49 @@ class Player implements HealthBarEntity {
     
     const input = inputSystem.getInput();
     
+    // Handle movement differently for mobile vs keyboard
+    if (inputSystem.isMobile()) {
+      this.handleMobileMovement(deltaTime, inputSystem);
+    } else {
+      this.handleKeyboardMovement(deltaTime, input);
+    }
+  }
+  
+  private handleMobileMovement(deltaTime: number, inputSystem: InputSystem): void {
+    const joystickInput = inputSystem.getJoystickInput();
+    
+    // Only update movement if there's meaningful joystick input
+    if (Math.abs(joystickInput.x) > 0.1 || Math.abs(joystickInput.y) > 0.1) {
+      // Get input values (already normalized)
+      const dx = joystickInput.x;
+      const dz = joystickInput.y;
+      
+      // Update position
+      this.x += dx * this.speed * deltaTime;
+      this.y += dz * this.speed * deltaTime;
+      
+      // Store direction for shooting (normalized)
+      this.mobileFacingDirection.set(dx, 0, dz).normalize();
+      
+      // Update direction vector for rendering
+      this.direction.copy(this.mobileFacingDirection);
+      
+      // Rotate player to face movement direction
+      const angle = Math.atan2(dx, dz);
+      this.mesh.rotation.y = angle;
+      
+      // Animate walking
+      this.animateWalking(deltaTime);
+    } else {
+      // Reset animation when still
+      this.resetAnimation();
+    }
+    
+    // Update mesh position
+    this.mesh.position.set(this.x, 0, this.y);
+  }
+  
+  private handleKeyboardMovement(deltaTime: number, input: { [key: string]: boolean }): void {
     // Get movement direction from input
     let dx = 0;
     let dz = 0;

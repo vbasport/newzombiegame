@@ -19,27 +19,235 @@ class GameEngine {
   private gameOver: boolean = false;
   private debugMode: boolean = false; // For testing and debugging
   private respawnCountdown: number = 0; // Respawn timer in seconds
-  private respawnTime: number = 10; // Total respawn time in seconds
+  private respawnTime: number = 5; // Reduced from 10 to 5 seconds
   private respawnText: THREE.Mesh | null = null; // 3D text for respawn countdown
   private playerDead: boolean = false; // Track if player is currently dead
   private scoreboardElement: HTMLElement | null = null; // Scoreboard DOM element
+  private mobileControlsElement: HTMLElement | null = null; // Mobile controls DOM element
+  private isMobile: boolean = false; // Detect if using mobile device
 
   constructor() {
     this.renderingSystem = new RenderingSystem();
     this.inputSystem = new InputSystem();
     this.uiSystem = new UISystem(this.renderingSystem.getScene());
+    this.isMobile = this.detectMobile();
     this.player = new Player();
     this.renderingSystem.addToScene(this.player.getMesh());
     this.uiSystem.createHealthBar(this.player, true);
     this.createScoreboard();
+    if (this.isMobile) {
+      this.createMobileControls();
+    }
     this.spawnInitialZombies(5);
     window.addEventListener('keydown', this.handleKeyDown.bind(this));
     window.addEventListener('resize', this.handleWindowResize.bind(this));
     console.log('Game engine initialized with', this.zombies.length, 'zombies');
+    console.log('Mobile device detected:', this.isMobile);
+  }
+
+  private detectMobile(): boolean {
+    return (
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      (window.innerWidth <= 800 && window.innerHeight <= 600)
+    );
   }
 
   private handleWindowResize(): void {
     this.updateScoreboardPosition();
+    if (this.isMobile && this.mobileControlsElement) {
+      this.updateMobileControlsPosition();
+    }
+  }
+
+  private createMobileControls(): void {
+    if (this.mobileControlsElement) {
+      document.body.removeChild(this.mobileControlsElement);
+    }
+    
+    const controlsContainer = document.createElement('div');
+    controlsContainer.id = 'mobile-controls';
+    controlsContainer.style.position = 'absolute';
+    controlsContainer.style.bottom = '20px';
+    controlsContainer.style.left = '0';
+    controlsContainer.style.width = '100%';
+    controlsContainer.style.display = 'flex';
+    controlsContainer.style.justifyContent = 'space-between';
+    controlsContainer.style.pointerEvents = 'none';
+    controlsContainer.style.zIndex = '1000';
+    
+    const joystickContainer = document.createElement('div');
+    joystickContainer.id = 'joystick-container';
+    joystickContainer.style.width = '150px';
+    joystickContainer.style.height = '150px';
+    joystickContainer.style.marginLeft = '20px';
+    joystickContainer.style.borderRadius = '50%';
+    joystickContainer.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    joystickContainer.style.position = 'relative';
+    joystickContainer.style.pointerEvents = 'auto';
+    
+    const joystickKnob = document.createElement('div');
+    joystickKnob.id = 'joystick-knob';
+    joystickKnob.style.width = '60px';
+    joystickKnob.style.height = '60px';
+    joystickKnob.style.borderRadius = '50%';
+    joystickKnob.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
+    joystickKnob.style.position = 'absolute';
+    joystickKnob.style.top = '50%';
+    joystickKnob.style.left = '50%';
+    joystickKnob.style.transform = 'translate(-50%, -50%)';
+    joystickKnob.style.pointerEvents = 'none';
+    
+    joystickContainer.appendChild(joystickKnob);
+    
+    const actionsContainer = document.createElement('div');
+    actionsContainer.id = 'actions-container';
+    actionsContainer.style.display = 'flex';
+    actionsContainer.style.flexDirection = 'column';
+    actionsContainer.style.gap = '15px';
+    actionsContainer.style.marginRight = '20px';
+    
+    const shootButton = document.createElement('div');
+    shootButton.id = 'shoot-button';
+    shootButton.style.width = '80px';
+    shootButton.style.height = '80px';
+    shootButton.style.borderRadius = '50%';
+    shootButton.style.backgroundColor = 'rgba(255, 0, 0, 0.6)';
+    shootButton.style.display = 'flex';
+    shootButton.style.justifyContent = 'center';
+    shootButton.style.alignItems = 'center';
+    shootButton.style.fontSize = '14px';
+    shootButton.style.fontWeight = 'bold';
+    shootButton.style.color = 'white';
+    shootButton.style.pointerEvents = 'auto';
+    shootButton.textContent = 'SHOOT';
+    
+    actionsContainer.appendChild(shootButton);
+    
+    controlsContainer.appendChild(joystickContainer);
+    controlsContainer.appendChild(actionsContainer);
+    
+    document.body.appendChild(controlsContainer);
+    
+    this.mobileControlsElement = controlsContainer;
+    
+    this.setupMobileControlsEvents(joystickContainer, shootButton);
+  }
+  
+  private setupMobileControlsEvents(joystickContainer: HTMLElement, shootButton: HTMLElement): void {
+    let isJoystickActive = false;
+    let joystickOrigin = { x: 0, y: 0 };
+    const knob = document.getElementById('joystick-knob');
+    const joystickMaxDistance = 40; // Max distance the joystick can move
+    
+    // Joystick touch events
+    joystickContainer.addEventListener('touchstart', (e) => {
+      isJoystickActive = true;
+      const touch = e.touches[0];
+      const rect = joystickContainer.getBoundingClientRect();
+      joystickOrigin.x = touch.clientX - rect.left;
+      joystickOrigin.y = touch.clientY - rect.top;
+      
+      // Set knob position
+      if (knob) {
+        knob.style.left = `${joystickOrigin.x}px`;
+        knob.style.top = `${joystickOrigin.y}px`;
+        knob.style.transform = 'translate(-50%, -50%)';
+      }
+      
+      e.preventDefault();
+    });
+    
+    joystickContainer.addEventListener('touchmove', (e) => {
+      if (!isJoystickActive || !knob) return;
+      
+      const touch = e.touches[0];
+      const rect = joystickContainer.getBoundingClientRect();
+      const x = touch.clientX - rect.left;
+      const y = touch.clientY - rect.top;
+      
+      // Calculate direction vector
+      let dx = x - joystickOrigin.x;
+      let dy = y - joystickOrigin.y;
+      
+      // Normalize if exceeds max distance
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > joystickMaxDistance) {
+        dx = dx / distance * joystickMaxDistance;
+        dy = dy / distance * joystickMaxDistance;
+      }
+      
+      // Update knob position
+      knob.style.left = `${joystickOrigin.x + dx}px`;
+      knob.style.top = `${joystickOrigin.y + dy}px`;
+      
+      // Update input system with normalized direction
+      const normalizedDx = dx / joystickMaxDistance;
+      const normalizedDy = dy / joystickMaxDistance;
+      this.inputSystem.setMobileJoystickInput(normalizedDx, normalizedDy);
+      
+      e.preventDefault();
+    });
+    
+    joystickContainer.addEventListener('touchend', () => {
+      isJoystickActive = false;
+      
+      // Reset knob position
+      if (knob) {
+        knob.style.left = '50%';
+        knob.style.top = '50%';
+        knob.style.transform = 'translate(-50%, -50%)';
+      }
+      
+      // Reset input
+      this.inputSystem.setMobileJoystickInput(0, 0);
+    });
+    
+    // Shoot button events
+    shootButton.addEventListener('touchstart', (e) => {
+      // Set input state
+      this.inputSystem.setMobileButtonInput('shoot', true);
+      
+      // Visual feedback
+      shootButton.style.transform = 'scale(0.9)';
+      shootButton.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+      
+      // Perform shoot action
+      this.shootZombie();
+      
+      e.preventDefault();
+    });
+    
+    shootButton.addEventListener('touchend', (e) => {
+      // Reset input state
+      this.inputSystem.setMobileButtonInput('shoot', false);
+      
+      // Reset visual state
+      shootButton.style.transform = 'scale(1)';
+      shootButton.style.backgroundColor = 'rgba(255, 0, 0, 0.6)';
+      
+      e.preventDefault();
+    });
+  }
+  
+  private updateMobileControlsPosition(): void {
+    if (!this.mobileControlsElement) return;
+    
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    
+    const joystickContainer = document.getElementById('joystick-container');
+    if (joystickContainer) {
+      const size = Math.min(screenWidth * 0.3, 150);
+      joystickContainer.style.width = `${size}px`;
+      joystickContainer.style.height = `${size}px`;
+    }
+    
+    const shootButton = document.getElementById('shoot-button');
+    if (shootButton) {
+      const size = Math.min(screenWidth * 0.2, 80);
+      shootButton.style.width = `${size}px`;
+      shootButton.style.height = `${size}px`;
+    }
   }
 
   private createScoreboard(): void {
@@ -60,33 +268,40 @@ class GameEngine {
     scoreboard.style.fontFamily = 'Arial, sans-serif';
     scoreboard.style.zIndex = '1000';
     scoreboard.style.display = 'flex';
-    scoreboard.style.justifyContent = 'space-between';
-    scoreboard.style.width = '500px';
+    scoreboard.style.flexWrap = 'wrap';
+    scoreboard.style.justifyContent = 'center';
+    scoreboard.style.maxWidth = '90%';
+    scoreboard.style.width = 'fit-content';
+    scoreboard.style.boxSizing = 'border-box';
     scoreboard.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.5)';
     
     const scoreElement = document.createElement('div');
     scoreElement.id = 'score-section';
     scoreElement.innerHTML = `<div>Score: <span id="score-value">${this.gameScore}</span></div>`;
     scoreElement.style.fontWeight = 'bold';
-    scoreElement.style.fontSize = '18px';
+    scoreElement.style.fontSize = 'clamp(14px, 3vw, 18px)';
+    scoreElement.style.margin = '0 10px';
     
     const healthElement = document.createElement('div');
     healthElement.id = 'health-section';
     healthElement.innerHTML = `<div>Health: <span id="health-value">${this.player.health}</span>/${this.player.maxHealth}</div>`;
     healthElement.style.fontWeight = 'bold';
-    healthElement.style.fontSize = '18px';
+    healthElement.style.fontSize = 'clamp(14px, 3vw, 18px)';
+    healthElement.style.margin = '0 10px';
     
     const killsElement = document.createElement('div');
     killsElement.id = 'kills-section';
     killsElement.innerHTML = `<div>Kills: <span id="kills-value">${this.player.kills}</span></div>`;
     killsElement.style.fontWeight = 'bold';
-    killsElement.style.fontSize = '18px';
+    killsElement.style.fontSize = 'clamp(14px, 3vw, 18px)';
+    killsElement.style.margin = '0 10px';
     
     const timerElement = document.createElement('div');
     timerElement.id = 'timer-section';
     timerElement.innerHTML = `<div>Time: <span id="timer-value">0:00</span></div>`;
     timerElement.style.fontWeight = 'bold';
-    timerElement.style.fontSize = '18px';
+    timerElement.style.fontSize = 'clamp(14px, 3vw, 18px)';
+    timerElement.style.margin = '0 10px';
     
     scoreboard.appendChild(scoreElement);
     scoreboard.appendChild(healthElement);
@@ -96,6 +311,8 @@ class GameEngine {
     document.body.appendChild(scoreboard);
     
     this.scoreboardElement = scoreboard;
+    
+    this.updateScoreboardPosition();
   }
   
   private updateScoreboard(): void {
@@ -128,6 +345,23 @@ class GameEngine {
     
     this.scoreboardElement.style.left = '50%';
     this.scoreboardElement.style.transform = 'translateX(-50%)';
+    
+    const viewportWidth = window.innerWidth;
+    const scoreboardWidth = this.scoreboardElement.offsetWidth;
+    
+    if (scoreboardWidth > viewportWidth * 0.9) {
+      if (viewportWidth < 400) {
+        this.scoreboardElement.style.flexDirection = 'column';
+        this.scoreboardElement.style.alignItems = 'center';
+      } else {
+        this.scoreboardElement.style.flexDirection = 'row';
+        this.scoreboardElement.style.flexWrap = 'wrap';
+        this.scoreboardElement.style.justifyContent = 'center';
+      }
+    } else {
+      this.scoreboardElement.style.flexDirection = 'row';
+      this.scoreboardElement.style.flexWrap = 'nowrap';
+    }
   }
 
   private spawnInitialZombies(count: number): void {
