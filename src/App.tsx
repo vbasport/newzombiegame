@@ -64,6 +64,7 @@ class App {
     input.maxLength = 25;
     input.required = true;
     input.autofocus = true;
+    input.style.textAlign = 'center';
     
     // Create error message container
     const errorMessage = document.createElement('div');
