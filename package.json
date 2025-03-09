@@ -11,5 +11,10 @@
   "devDependencies": {
     "typescript": "~5.7.2",
     "vite": "^6.2.0"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^8.13.0",
+    "@types/three": "^0.174.0",
+    "three": "^0.174.0"
   }
 }
