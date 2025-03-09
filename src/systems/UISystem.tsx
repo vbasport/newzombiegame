@@ -26,10 +26,10 @@ const UI_CONFIG = {
     borderSize: 0.02
   },
   nameTag: {
-    yOffset: 4.0,            // Position further above health bar (increased)
-    width: 3.0,              // Width of the name tag (increased from 2.0)
-    height: 0.8,             // Height of the name tag (increased from 0.5)
-    fontSize: 32,            // Font size for the name tag (increased from 24)
+    yOffset: 4.5,            // Position further above health bar (increased)
+    width: 4.0,              // Width of the name tag (increased to accommodate larger font)
+    height: 1.2,             // Height of the name tag (increased to accommodate larger font)
+    fontSize: 64,            // Font size for the name tag (doubled from 32)
     backgroundColor: 'rgba(0, 0, 0, 0.8)', // Background color (more opaque)
     textColor: 'white',      // Text color
     borderColor: 'rgba(255, 255, 255, 0.5)', // Border color (more visible)
@@ -83,8 +83,8 @@ class UISystem {
     }
     
     // Set canvas size (increased for better quality)
-    canvas.width = 512;
-    canvas.height = 128;
+    canvas.width = 768;
+    canvas.height = 192;
     
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -291,6 +291,9 @@ class UISystem {
     this.healthBars.forEach((_healthBar, entity) => {
       // Update health bar positions to follow entities
       this.updateHealthBarPosition(entity, camera);
+      
+      // Also update the health bar visual state
+      this.updateHealthBar(entity);
     });
   }
 

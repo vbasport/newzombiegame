@@ -272,81 +272,111 @@ class GameEngine {
     const uiContainer = document.createElement('div');
     uiContainer.id = 'game-ui-container';
     uiContainer.style.position = 'fixed';
-    uiContainer.style.top = '10px';
-    uiContainer.style.left = '10px';
-    uiContainer.style.right = '10px';
+    uiContainer.style.top = '5px';
+    uiContainer.style.left = '5px';
+    uiContainer.style.right = '5px';
     uiContainer.style.display = 'flex';
     uiContainer.style.justifyContent = 'space-between';
     uiContainer.style.alignItems = 'flex-start';
     uiContainer.style.pointerEvents = 'none';
     uiContainer.style.zIndex = '1000';
     
-    // Create left panel for scoreboard
-    const leftPanel = document.createElement('div');
-    leftPanel.id = 'game-ui-left-panel';
-    leftPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    leftPanel.style.borderRadius = '5px';
-    leftPanel.style.padding = '10px';
-    leftPanel.style.color = 'white';
-    leftPanel.style.fontFamily = 'Arial, sans-serif';
-    leftPanel.style.fontSize = '14px';
-    leftPanel.style.pointerEvents = 'auto';
+    // Create a single top bar for all stats
+    const statsBar = document.createElement('div');
+    statsBar.id = 'game-ui-stats-bar';
+    statsBar.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    statsBar.style.borderRadius = '5px';
+    statsBar.style.padding = '8px 15px';
+    statsBar.style.color = 'white';
+    statsBar.style.fontFamily = 'Arial, sans-serif';
+    statsBar.style.fontSize = '14px';
+    statsBar.style.width = '100%';
+    statsBar.style.display = 'flex';
+    statsBar.style.flexDirection = 'column';
+    statsBar.style.gap = '8px';
+    statsBar.style.pointerEvents = 'auto';
+    statsBar.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.3)';
     
-    // Create center panel for notifications
+    // Create top row for player stats
+    const playerStatsRow = document.createElement('div');
+    playerStatsRow.id = 'game-ui-player-stats-row';
+    playerStatsRow.style.display = 'flex';
+    playerStatsRow.style.width = '100%';
+    playerStatsRow.style.justifyContent = 'space-between';
+    playerStatsRow.style.alignItems = 'center';
+    
+    // Create separator
+    const separator = document.createElement('div');
+    separator.style.width = '100%';
+    separator.style.height = '1px';
+    separator.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    separator.style.margin = '0';
+    
+    // Create bottom row for game info
+    const gameInfoRow = document.createElement('div');
+    gameInfoRow.id = 'game-ui-game-info-row';
+    gameInfoRow.style.display = 'flex';
+    gameInfoRow.style.width = '100%';
+    gameInfoRow.style.justifyContent = 'space-between';
+    gameInfoRow.style.alignItems = 'center';
+    
+    // Add rows and separator to stats bar
+    statsBar.appendChild(playerStatsRow);
+    statsBar.appendChild(separator);
+    statsBar.appendChild(gameInfoRow);
+    
+    // Create center panel for notifications (below the stats bar)
     const centerPanel = document.createElement('div');
     centerPanel.id = 'game-ui-center-panel';
+    centerPanel.style.position = 'fixed';
+    centerPanel.style.top = '80px';
+    centerPanel.style.left = '0';
+    centerPanel.style.right = '0';
     centerPanel.style.display = 'flex';
     centerPanel.style.flexDirection = 'column';
     centerPanel.style.alignItems = 'center';
     centerPanel.style.gap = '10px';
     
-    // Create right panel for player count and wave info
-    const rightPanel = document.createElement('div');
-    rightPanel.id = 'game-ui-right-panel';
-    rightPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    rightPanel.style.borderRadius = '5px';
-    rightPanel.style.padding = '10px';
-    rightPanel.style.color = 'white';
-    rightPanel.style.fontFamily = 'Arial, sans-serif';
-    rightPanel.style.fontSize = '14px';
-    rightPanel.style.display = 'flex';
-    rightPanel.style.flexDirection = 'column';
-    rightPanel.style.gap = '5px';
-    rightPanel.style.pointerEvents = 'auto';
+    // Add stats bar to container
+    uiContainer.appendChild(statsBar);
     
-    // Add panels to container
-    uiContainer.appendChild(leftPanel);
-    uiContainer.appendChild(centerPanel);
-    uiContainer.appendChild(rightPanel);
-    
-    // Add container to document
+    // Add container and center panel to document
     document.body.appendChild(uiContainer);
+    document.body.appendChild(centerPanel);
     
-    // Create scoreboard in left panel
-    this.createScoreboard(leftPanel);
+    // Create scoreboard in player stats row
+    this.createScoreboard(playerStatsRow);
     
-    // Create wave indicator and player count in right panel
-    this.createWaveIndicator(rightPanel);
+    // Create wave indicator and player count in game info row
+    this.createWaveIndicator(gameInfoRow);
   }
   
   /**
    * Create the scoreboard to display player stats
    */
   private createScoreboard(container: HTMLElement): void {
-    // Create scoreboard content
+    // Create scoreboard content with evenly spaced layout
     const scoreElement = document.createElement('div');
-    scoreElement.innerHTML = `<strong>Score:</strong> <span id="score-value">0</span>`;
+    scoreElement.innerHTML = `<strong>Score:</strong> <span id="score-value" style="color: #ffeb3b; font-weight: bold;">0</span>`;
     
     const healthElement = document.createElement('div');
-    healthElement.innerHTML = `<strong>Health:</strong> <span id="health-value">${this.player.health}/${this.player.maxHealth}</span>`;
+    healthElement.innerHTML = `<strong>Health:</strong> <span id="health-value" style="color: #4caf50; font-weight: bold;">${this.player.health}/${this.player.maxHealth}</span>`;
     
     const killsElement = document.createElement('div');
-    killsElement.innerHTML = `<strong>Kills:</strong> <span id="kills-value">0</span>`;
+    killsElement.innerHTML = `<strong>Kills:</strong> <span id="kills-value" style="color: #ff5722; font-weight: bold;">0</span>`;
     
     const timeElement = document.createElement('div');
-    timeElement.innerHTML = `<strong>Time:</strong> <span id="time-value">0:00</span>`;
+    timeElement.innerHTML = `<strong>Time:</strong> <span id="time-value" style="color: #2196f3; font-weight: bold;">0:00</span>`;
     
-    // Add elements to the container
+    // Style each element for the top row
+    [scoreElement, healthElement, killsElement, timeElement].forEach(el => {
+      el.style.display = 'inline-block';
+      el.style.whiteSpace = 'nowrap';
+      el.style.textAlign = 'center';
+      el.style.flex = '1';
+    });
+    
+    // Add elements directly to the container
     container.appendChild(scoreElement);
     container.appendChild(healthElement);
     container.appendChild(killsElement);
@@ -363,14 +393,18 @@ class GameEngine {
     // Create wave indicator element
     const waveElement = document.createElement('div');
     waveElement.id = 'wave-indicator';
-    waveElement.innerHTML = `<strong>Wave:</strong> <span id="wave-value">${this.waveNumber}</span>`;
+    waveElement.innerHTML = `<strong>Wave:</strong> <span id="wave-value" style="color: #e91e63; font-weight: bold;">${this.waveNumber}</span>`;
+    waveElement.style.flex = '1';
+    waveElement.style.textAlign = 'left';
     
     // Create player count element (will be updated by NetworkSystem)
     const playersElement = document.createElement('div');
     playersElement.id = 'active-players';
-    playersElement.innerHTML = `<strong>Players Online:</strong> <span id="players-value">1</span>`;
+    playersElement.innerHTML = `<strong>Players Online:</strong> <span id="players-value" style="color: #03a9f4; font-weight: bold;">1</span>`;
+    playersElement.style.flex = '1';
+    playersElement.style.textAlign = 'right';
     
-    // Add elements to the container
+    // Add elements directly to the container
     container.appendChild(waveElement);
     container.appendChild(playersElement);
     
@@ -428,12 +462,20 @@ class GameEngine {
     
     // Show temporarily with highlight if requested
     if (showTemporarily) {
-      this.waveIndicatorElement.style.backgroundColor = 'rgba(255, 87, 34, 0.7)';
-      setTimeout(() => {
-        if (this.waveIndicatorElement) {
-          this.waveIndicatorElement.style.backgroundColor = 'transparent';
-        }
-      }, 2000);
+      // Highlight just the wave value instead of the entire element
+      if (waveValue) {
+        const waveValueElement = waveValue as HTMLElement;
+        waveValueElement.style.color = '#ff5722';
+        waveValueElement.style.fontSize = '110%';
+        
+        setTimeout(() => {
+          if (waveValue) {
+            const waveValueElement = waveValue as HTMLElement;
+            waveValueElement.style.color = '#e91e63';
+            waveValueElement.style.fontSize = '100%';
+          }
+        }, 2000);
+      }
     }
   }
   
@@ -946,6 +988,9 @@ class GameEngine {
       
       // Force update the zombie's health bar
       this.uiSystem.updateHealthBar(hitZombie);
+      
+      // Force an immediate render to update the health bar visually
+      this.renderingSystem.render();
       
       if (!hitZombie.isAlive) {
         // Update player kills and game score
