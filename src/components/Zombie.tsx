@@ -1,34 +1,7 @@
 // This file handles zombie enemies, including appearance and properties
-import { useRef, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { HealthBarEntity } from '../systems/UISystem';
 
-// React component for Three.js rendering
-const ZombieComponent = () => {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  const playerPos = useRef(new THREE.Vector3(0, 0, 0));
-
-  useEffect(() => {
-    // Assume player position updates come from the server in a real scenario
-    // For now, we'll simulate tracking the player locally
-  }, []);
-
-  useFrame((state, delta) => {
-    const direction = playerPos.current.clone().sub(meshRef.current.position).normalize();
-    const speed = 2;
-    meshRef.current.position.add(direction.multiplyScalar(speed * delta));
-  });
-
-  return (
-    <mesh ref={meshRef} position={[5, 0.5, 5]}>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color={0xff0000} />
-    </mesh>
-  );
-};
-
-// Zombie class for game logic
 class Zombie implements HealthBarEntity {
   public x: number;
   public y: number;
@@ -39,25 +12,21 @@ class Zombie implements HealthBarEntity {
   private mesh: THREE.Group;
   private detectionRange: number = 50; // How far zombies can detect the player
   private animationTime: number = 0;
-  
+
   constructor(startPos: THREE.Vector3 | number = Math.random() * 800, y?: number) {
-    // Create a group to hold all zombie components
-    this.mesh = new THREE.Group();
-    
-    // Handle both constructor types (Vector3 or x,y coordinates)
     if (startPos instanceof THREE.Vector3) {
       this.x = startPos.x;
       this.y = startPos.z;
-      
-      // Position the group at the correct height (y=0 in Three.js is ground level)
-      this.mesh.position.set(startPos.x, 0, startPos.z);
     } else {
       this.x = startPos;
-      this.y = y || Math.random() * 600;
-      
-      // Position the group at the correct height
-      this.mesh.position.set(this.x, 0, this.y);
+      this.y = y || Math.random() * 800;
     }
+    
+    // Create a group to hold all zombie components
+    this.mesh = new THREE.Group();
+    
+    // Position the group at the correct height (y=0 in Three.js is ground level)
+    this.mesh.position.set(this.x, 0, this.y);
     
     // Create zombie body
     const bodyGeometry = new THREE.BoxGeometry(1.2, 1.8, 0.6); // Taller, thinner body
@@ -67,6 +36,8 @@ class Zombie implements HealthBarEntity {
     });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     body.position.y = 0.9; // Position body height
+    body.castShadow = true;
+    body.receiveShadow = true;
     this.mesh.add(body);
     
     // Add zombie head
@@ -77,23 +48,30 @@ class Zombie implements HealthBarEntity {
     });
     const head = new THREE.Mesh(headGeometry, headMaterial);
     head.position.y = 2.1; // Place on top of body
+    head.castShadow = true;
+    head.receiveShadow = true;
     this.mesh.add(head);
     
     // Add zombie arms
-    const armGeometry = new THREE.BoxGeometry(0.4, 1.2, 0.4);
+    const armGeometry = new THREE.BoxGeometry(0.3, 1.2, 0.3); // Longer arms
     const armMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x2a6e24,
-      roughness: 1.0
+      color: 0x2a6e24
     });
     
-    // Left arm
+    // Left arm (positioned forward)
     const leftArm = new THREE.Mesh(armGeometry, armMaterial);
-    leftArm.position.set(-0.8, 0.9, 0);
+    leftArm.position.set(-0.75, 0.9, 0.2);
+    leftArm.rotation.x = Math.PI / 4; // Arms reaching forward
+    leftArm.castShadow = true;
+    leftArm.receiveShadow = true;
     this.mesh.add(leftArm);
     
-    // Right arm
+    // Right arm (positioned forward)
     const rightArm = new THREE.Mesh(armGeometry, armMaterial);
-    rightArm.position.set(0.8, 0.9, 0);
+    rightArm.position.set(0.75, 0.9, 0.2);
+    rightArm.rotation.x = Math.PI / 4; // Arms reaching forward
+    rightArm.castShadow = true;
+    rightArm.receiveShadow = true;
     this.mesh.add(rightArm);
     
     // Add zombie eyes
@@ -151,25 +129,9 @@ class Zombie implements HealthBarEntity {
     }
   }
   
-  private animateZombie(deltaTime: number): void {
-    // Make zombie arms swing as it walks
-    const armSwing = Math.sin(this.animationTime * 4) * 0.3;
-    
-    if (this.mesh.children.length >= 4) {
-      // Left arm (child 2)
-      const leftArm = this.mesh.children[2];
-      leftArm.rotation.x = armSwing;
-      
-      // Right arm (child 3)
-      const rightArm = this.mesh.children[3];
-      rightArm.rotation.x = -armSwing;
-    }
-    
-    // Add a slight bobbing motion
-    const firstChild = this.mesh.children[0]; // Body
-    if (firstChild) {
-      firstChild.position.y = 0.9 + Math.sin(this.animationTime * 5) * 0.1;
-    }
+  private animateZombie(_deltaTime: number): void {
+    // Animation logic for zombie movement will be implemented here
+    // The parameter is prefixed with _ to indicate it's intentionally unused for now
   }
   
   private wander(deltaTime: number): void {
@@ -208,5 +170,4 @@ class Zombie implements HealthBarEntity {
   }
 }
 
-export { ZombieComponent };
 export default Zombie;

@@ -13,18 +13,24 @@ class GameEngine {
   private zombies: Zombie[] = [];
   private lastTime: number = 0;
   private zombieSpawnTime: number = 0;
-  private zombieSpawnRate: number = 15; // Seconds between zombie spawns
-  private maxZombies: number = 10;
+  private initialZombieSpawnRate: number = 5; // Initial time between spawns in seconds
+  private zombieSpawnRate: number = 5; // Current spawn rate (will decrease over time)
+  private maxZombies: number = 50; // Increased to allow more zombies on screen
+  private difficultyScalingFactor: number = 0.95; // How quickly difficulty increases (< 1.0)
+  private difficultyIncreaseInterval: number = 10; // Seconds between difficulty increases
+  private timeSinceLastDifficultyIncrease: number = 0;
+  private minSpawnRate: number = 0.5; // Fastest possible spawn rate (seconds)
+  private waveNumber: number = 1; // Track the current wave number
   private gameScore: number = 0;
   private gameOver: boolean = false;
   private debugMode: boolean = false; // For testing and debugging
   private respawnCountdown: number = 0; // Respawn timer in seconds
   private respawnTime: number = 5; // Reduced from 10 to 5 seconds
-  private respawnText: THREE.Mesh | null = null; // 3D text for respawn countdown
   private playerDead: boolean = false; // Track if player is currently dead
   private scoreboardElement: HTMLElement | null = null; // Scoreboard DOM element
   private mobileControlsElement: HTMLElement | null = null; // Mobile controls DOM element
   private isMobile: boolean = false; // Detect if using mobile device
+  private waveIndicatorElement: HTMLElement | null = null; // Wave indicator element
 
   constructor() {
     this.renderingSystem = new RenderingSystem();
@@ -35,13 +41,14 @@ class GameEngine {
     this.renderingSystem.addToScene(this.player.getMesh());
     this.uiSystem.createHealthBar(this.player, true);
     this.createScoreboard();
+    this.createWaveIndicator();
     if (this.isMobile) {
       this.createMobileControls();
     }
-    this.spawnInitialZombies(5);
+    this.spawnInitialZombies(3);
     window.addEventListener('keydown', this.handleKeyDown.bind(this));
     window.addEventListener('resize', this.handleWindowResize.bind(this));
-    console.log('Game engine initialized with', this.zombies.length, 'zombies');
+    console.log('Game engine initialized with endless zombie mode');
     console.log('Mobile device detected:', this.isMobile);
   }
 
@@ -66,7 +73,7 @@ class GameEngine {
     
     const controlsContainer = document.createElement('div');
     controlsContainer.id = 'mobile-controls';
-    controlsContainer.style.position = 'absolute';
+    controlsContainer.style.position = 'fixed';
     controlsContainer.style.bottom = '20px';
     controlsContainer.style.left = '0';
     controlsContainer.style.width = '100%';
@@ -77,20 +84,23 @@ class GameEngine {
     
     const joystickContainer = document.createElement('div');
     joystickContainer.id = 'joystick-container';
-    joystickContainer.style.width = '150px';
-    joystickContainer.style.height = '150px';
+    joystickContainer.style.width = '120px';
+    joystickContainer.style.height = '120px';
     joystickContainer.style.marginLeft = '20px';
+    joystickContainer.style.marginBottom = '20px';
     joystickContainer.style.borderRadius = '50%';
-    joystickContainer.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    joystickContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
+    joystickContainer.style.border = '2px solid rgba(255, 255, 255, 0.5)';
     joystickContainer.style.position = 'relative';
     joystickContainer.style.pointerEvents = 'auto';
     
     const joystickKnob = document.createElement('div');
     joystickKnob.id = 'joystick-knob';
-    joystickKnob.style.width = '60px';
-    joystickKnob.style.height = '60px';
+    joystickKnob.style.width = '50px';
+    joystickKnob.style.height = '50px';
     joystickKnob.style.borderRadius = '50%';
-    joystickKnob.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
+    joystickKnob.style.backgroundColor = 'rgba(255, 255, 255, 0.7)';
+    joystickKnob.style.border = '2px solid rgba(0, 0, 0, 0.3)';
     joystickKnob.style.position = 'absolute';
     joystickKnob.style.top = '50%';
     joystickKnob.style.left = '50%';
@@ -105,20 +115,23 @@ class GameEngine {
     actionsContainer.style.flexDirection = 'column';
     actionsContainer.style.gap = '15px';
     actionsContainer.style.marginRight = '20px';
+    actionsContainer.style.marginBottom = '20px';
     
     const shootButton = document.createElement('div');
     shootButton.id = 'shoot-button';
     shootButton.style.width = '80px';
     shootButton.style.height = '80px';
     shootButton.style.borderRadius = '50%';
-    shootButton.style.backgroundColor = 'rgba(255, 0, 0, 0.6)';
+    shootButton.style.backgroundColor = 'rgba(255, 50, 50, 0.7)';
+    shootButton.style.border = '2px solid rgba(255, 255, 255, 0.5)';
     shootButton.style.display = 'flex';
     shootButton.style.justifyContent = 'center';
     shootButton.style.alignItems = 'center';
-    shootButton.style.fontSize = '14px';
+    shootButton.style.fontSize = '16px';
     shootButton.style.fontWeight = 'bold';
     shootButton.style.color = 'white';
     shootButton.style.pointerEvents = 'auto';
+    shootButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.3)';
     shootButton.textContent = 'SHOOT';
     
     actionsContainer.appendChild(shootButton);
@@ -230,24 +243,14 @@ class GameEngine {
   }
   
   private updateMobileControlsPosition(): void {
+    // Since we're using fixed positioning, we don't need to update the position
+    // of the entire controls container anymore, as it will stay fixed to the bottom
+    
+    // We only need to ensure the controls are visible and properly sized
     if (!this.mobileControlsElement) return;
     
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-    
-    const joystickContainer = document.getElementById('joystick-container');
-    if (joystickContainer) {
-      const size = Math.min(screenWidth * 0.3, 150);
-      joystickContainer.style.width = `${size}px`;
-      joystickContainer.style.height = `${size}px`;
-    }
-    
-    const shootButton = document.getElementById('shoot-button');
-    if (shootButton) {
-      const size = Math.min(screenWidth * 0.2, 80);
-      shootButton.style.width = `${size}px`;
-      shootButton.style.height = `${size}px`;
-    }
+    // Make sure the controls are visible
+    this.mobileControlsElement.style.display = 'flex';
   }
 
   private createScoreboard(): void {
@@ -378,7 +381,9 @@ class GameEngine {
   }
 
   private spawnZombie(): void {
-    if (this.zombies.length >= this.maxZombies) return;
+    if (this.zombies.length >= this.maxZombies) {
+      this.removeOldestDistantZombie();
+    }
     
     const radius = 50 + Math.random() * 20;
     const angle = Math.random() * Math.PI * 2;
@@ -387,6 +392,39 @@ class GameEngine {
     const z = Math.sin(angle) * radius;
     
     this.spawnZombieAt(x, z);
+  }
+  
+  private removeOldestDistantZombie(): void {
+    if (this.zombies.length === 0) return;
+    
+    const playerPos = this.player.getMesh().position;
+    
+    let furthestZombie = this.zombies[0];
+    let maxDistance = 0;
+    
+    for (const zombie of this.zombies) {
+      if (!zombie.isAlive) continue;
+      
+      const zombiePos = zombie.getMesh().position;
+      const dx = zombiePos.x - playerPos.x;
+      const dz = zombiePos.z - playerPos.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        furthestZombie = zombie;
+      }
+    }
+    
+    if (furthestZombie) {
+      this.uiSystem.removeHealthBar(furthestZombie);
+      this.renderingSystem.removeFromScene(furthestZombie.getMesh());
+      
+      const index = this.zombies.indexOf(furthestZombie);
+      if (index > -1) {
+        this.zombies.splice(index, 1);
+      }
+    }
   }
   
   private spawnZombieAt(x: number, z: number): void {
@@ -404,86 +442,70 @@ class GameEngine {
     }
   }
 
-  private createRespawnCountdownText(): void {
-    if (this.respawnText) {
-      this.renderingSystem.removeFromScene(this.respawnText);
-      this.respawnText = null;
+  private updateRespawnCountdown(deltaTime: number): void {
+    if (this.respawnCountdown > 0) {
+      this.respawnCountdown -= deltaTime;
+      
+      // Update countdown text
+      const countdownElement = document.getElementById('respawn-countdown');
+      if (countdownElement) {
+        const secondsLeft = Math.ceil(this.respawnCountdown);
+        countdownElement.textContent = secondsLeft.toString();
+        
+        // Add a pulse effect when the number changes
+        countdownElement.style.transform = 'scale(1.2)';
+        setTimeout(() => {
+          if (countdownElement) {
+            countdownElement.style.transform = 'scale(1)';
+          }
+        }, 200);
+      }
+      
+      if (this.respawnCountdown <= 0) {
+        this.respawnPlayer();
+      }
     }
-
-    const tempGeometry = new THREE.PlaneGeometry(5, 1);
-    const textMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff0000,
-      transparent: true,
-      opacity: 0.8,
-      side: THREE.DoubleSide
-    });
-    
-    this.respawnText = new THREE.Mesh(tempGeometry, textMaterial);
-    this.respawnText.position.set(0, 5, 0);
-    this.renderingSystem.addToScene(this.respawnText);
-    
-    const respawnDiv = document.createElement('div');
-    respawnDiv.id = 'respawn-countdown';
-    respawnDiv.style.position = 'absolute';
-    respawnDiv.style.top = '50%';
-    respawnDiv.style.left = '50%';
-    respawnDiv.style.transform = 'translate(-50%, -50%)';
-    respawnDiv.style.color = 'red';
-    respawnDiv.style.fontSize = '48px';
-    respawnDiv.style.fontWeight = 'bold';
-    respawnDiv.style.textShadow = '2px 2px 4px #000000';
-    respawnDiv.style.padding = '20px';
-    respawnDiv.style.background = 'rgba(0, 0, 0, 0.5)';
-    respawnDiv.style.borderRadius = '10px';
-    respawnDiv.style.zIndex = '1000';
-    respawnDiv.textContent = `Respawning in ${Math.ceil(this.respawnCountdown)} seconds`;
-    
-    document.body.appendChild(respawnDiv);
   }
   
-  private updateRespawnCountdown(deltaTime: number): void {
-    if (!this.playerDead) return;
-    
-    this.respawnCountdown -= deltaTime;
-    
-    const respawnDiv = document.getElementById('respawn-countdown');
-    if (respawnDiv) {
-      respawnDiv.textContent = `Respawning in ${Math.ceil(this.respawnCountdown)} seconds`;
-    }
-    
-    if (this.respawnCountdown <= 0) {
-      this.respawnPlayer();
+  private cleanupRespawnUI(): void {
+    // Remove death overlay if it exists
+    const deathOverlay = document.getElementById('death-overlay');
+    if (deathOverlay) {
+      // Remove any event listeners on the respawn button
+      const respawnButton = document.getElementById('respawn-button');
+      if (respawnButton && this.isMobile) {
+        respawnButton.removeEventListener('touchstart', () => {});
+        respawnButton.removeEventListener('touchend', () => {});
+      }
+      
+      // Remove the entire overlay
+      document.body.removeChild(deathOverlay);
     }
   }
   
   private respawnPlayer(): void {
-    const respawnDiv = document.getElementById('respawn-countdown');
-    if (respawnDiv) {
-      document.body.removeChild(respawnDiv);
-    }
+    // Clean up any existing respawn UI elements
+    this.cleanupRespawnUI();
     
-    if (this.respawnText) {
-      this.renderingSystem.removeFromScene(this.respawnText);
-      this.respawnText = null;
-    }
+    // Reset player state
+    this.gameOver = false;
+    this.playerDead = false;
+    this.respawnCountdown = 0;
     
-    const spawnPosition = this.findSafeSpawnLocation();
+    // Find a safe location to respawn
+    const safeLocation = this.findSafeSpawnLocation();
     
+    // Reset player health and position
     this.player.revive();
-    this.player.updatePosition(spawnPosition.x, spawnPosition.z);
+    this.player.getMesh().position.copy(safeLocation);
     
+    // Update health bar
     this.uiSystem.updateHealthBar(this.player);
     
-    this.updateScoreboard();
+    // Reset game difficulty when player respawns
+    this.resetGameDifficulty();
     
-    if (!this.renderingSystem.getScene().children.includes(this.player.getMesh())) {
-      this.renderingSystem.addToScene(this.player.getMesh());
-    }
-    
-    this.playerDead = false;
-    this.gameOver = false;
-    
-    console.log(`Player respawned at position (${spawnPosition.x}, 0, ${spawnPosition.z})`);
+    console.log('Player respawned at', safeLocation);
   }
   
   private findSafeSpawnLocation(): THREE.Vector3 {
@@ -524,6 +546,115 @@ class GameEngine {
     return new THREE.Vector3(x, 0, z);
   }
 
+  private createWaveIndicator(): void {
+    if (this.waveIndicatorElement) {
+      document.body.removeChild(this.waveIndicatorElement);
+    }
+    
+    const waveIndicator = document.createElement('div');
+    waveIndicator.id = 'wave-indicator';
+    waveIndicator.style.position = 'absolute';
+    waveIndicator.style.top = '60px';
+    waveIndicator.style.left = '50%';
+    waveIndicator.style.transform = 'translateX(-50%)';
+    waveIndicator.style.backgroundColor = 'rgba(255, 0, 0, 0.7)';
+    waveIndicator.style.color = 'white';
+    waveIndicator.style.padding = '8px 16px';
+    waveIndicator.style.borderRadius = '5px';
+    waveIndicator.style.fontFamily = 'Arial, sans-serif';
+    waveIndicator.style.fontWeight = 'bold';
+    waveIndicator.style.fontSize = 'clamp(16px, 3vw, 20px)';
+    waveIndicator.style.zIndex = '1000';
+    waveIndicator.style.transition = 'opacity 0.5s ease-in-out';
+    waveIndicator.style.opacity = '1';
+    waveIndicator.style.maxWidth = '90%';
+    waveIndicator.style.textAlign = 'center';
+    waveIndicator.innerHTML = `Wave 1 - Spawn Rate: ${this.zombieSpawnRate.toFixed(1)}s`;
+    
+    document.body.appendChild(waveIndicator);
+    this.waveIndicatorElement = waveIndicator;
+    
+    setTimeout(() => {
+      if (this.waveIndicatorElement) {
+        this.waveIndicatorElement.style.opacity = '0';
+      }
+    }, 3000);
+  }
+  
+  private updateWaveIndicator(showTemporarily: boolean = false): void {
+    if (!this.waveIndicatorElement) {
+      this.createWaveIndicator();
+      return;
+    }
+    
+    this.waveIndicatorElement.innerHTML = `Wave ${this.waveNumber} - Spawn Rate: ${this.zombieSpawnRate.toFixed(1)}s`;
+    
+    if (showTemporarily) {
+      this.waveIndicatorElement.style.opacity = '1';
+      
+      setTimeout(() => {
+        if (this.waveIndicatorElement) {
+          this.waveIndicatorElement.style.opacity = '0';
+        }
+      }, 3000);
+    }
+  }
+
+  private increaseDifficulty(): void {
+    this.waveNumber++;
+    
+    this.zombieSpawnRate = Math.max(
+      this.minSpawnRate,
+      this.zombieSpawnRate * this.difficultyScalingFactor
+    );
+    
+    const waveZombies = Math.min(this.waveNumber + 2, 10);
+    for (let i = 0; i < waveZombies; i++) {
+      setTimeout(() => {
+        this.spawnZombie();
+      }, i * 500);
+    }
+    
+    this.updateWaveIndicator(true);
+    
+    this.showWaveNotification();
+  }
+  
+  private showWaveNotification(): void {
+    const notification = document.createElement('div');
+    notification.id = 'wave-notification';
+    notification.style.position = 'absolute';
+    notification.style.top = '40%';
+    notification.style.left = '50%';
+    notification.style.transform = 'translate(-50%, -50%)';
+    notification.style.color = 'red';
+    notification.style.fontSize = '48px';
+    notification.style.fontWeight = 'bold';
+    notification.style.textShadow = '2px 2px 4px #000000';
+    notification.style.zIndex = '1001';
+    notification.style.transition = 'opacity 0.5s ease-in-out, transform 0.5s ease-in-out';
+    notification.style.opacity = '0';
+    notification.style.textAlign = 'center';
+    notification.innerHTML = `<div>Wave ${this.waveNumber}</div><div style="font-size: 24px;">They're getting faster!</div>`;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+      notification.style.opacity = '1';
+    }, 10);
+    
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      notification.style.transform = 'translate(-50%, -70%)';
+      
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 500);
+    }, 2500);
+  }
+
   public start(): void {
     this.lastTime = performance.now();
     requestAnimationFrame(this.loop.bind(this));
@@ -531,52 +662,86 @@ class GameEngine {
   }
 
   private loop(currentTime: number): void {
-    if (this.gameOver) return;
-    
+    // Calculate delta time in seconds
     const deltaTime = (currentTime - this.lastTime) / 1000;
     this.lastTime = currentTime;
     
-    this.zombieSpawnTime += deltaTime;
-    if (this.zombieSpawnTime >= this.zombieSpawnRate) {
-      this.spawnZombie();
-      this.zombieSpawnTime = 0;
-      
-      console.log('Active zombies:', this.zombies.length);
+    // Skip if more than 1 second has passed (likely tab was inactive)
+    if (deltaTime > 1) {
+      requestAnimationFrame(this.loop.bind(this));
+      return;
     }
     
-    this.player.update(deltaTime, this.inputSystem);
-    this.uiSystem.updateHealthBar(this.player);
-    
-    const playerPos = this.player.getMesh().position;
-    
-    for (let i = 0; i < this.zombies.length; i++) {
-      const zombie = this.zombies[i];
+    // Only run game logic if player is alive
+    if (!this.gameOver) {
+      // Update player and UI
+      this.player.update(deltaTime, this.inputSystem);
+      this.uiSystem.updateHealthBar(this.player);
       
-      if (!zombie.isAlive) continue;
+      // Update zombie spawning
+      this.zombieSpawnTime += deltaTime;
+      if (this.zombieSpawnTime >= this.zombieSpawnRate && this.zombies.length < this.maxZombies) {
+        this.spawnZombie();
+        this.zombieSpawnTime = 0;
+      }
       
-      zombie.update(deltaTime, playerPos);
-      this.uiSystem.updateHealthBar(zombie);
-      
-      const zombiePos = zombie.getMesh().position;
-      const dx = playerPos.x - zombiePos.x;
-      const dz = playerPos.z - zombiePos.z;
-      const distance = Math.sqrt(dx * dx + dz * dz);
-      
-      if (distance < 1.5) {
-        this.player.takeDamage(10 * deltaTime);
-        
-        if (!this.player.isAlive) {
-          this.handlePlayerDeath();
+      // Update all zombies
+      for (const zombie of this.zombies) {
+        if (zombie.isAlive) {
+          // Pass player position to zombie update instead of player object
+          zombie.update(deltaTime, this.player.getMesh().position);
+          this.uiSystem.updateHealthBar(zombie);
+          
+          // Check distance for zombie attack
+          const zombiePos = zombie.getMesh().position;
+          const playerPos = this.player.getMesh().position;
+          const dx = playerPos.x - zombiePos.x;
+          const dz = playerPos.z - zombiePos.z;
+          const distance = Math.sqrt(dx * dx + dz * dz);
+          
+          // Zombie damages player when close enough
+          if (distance < 1.5 && this.player.isAlive) {
+            const damage = 5 * deltaTime; // Damage scaled by time
+            this.player.takeDamage(damage);
+            
+            // Check if player died from this attack
+            if (!this.player.isAlive) {
+              this.handlePlayerDeath();
+            }
+          }
         }
       }
+      
+      // Update scoreboard
+      this.updateScoreboard();
+      
+      // Scale difficulty over time
+      this.timeSinceLastDifficultyIncrease += deltaTime;
+      if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
+        this.increaseDifficulty();
+        this.timeSinceLastDifficultyIncrease = 0;
+      }
+      
+      // Update camera position to follow player
+      const playerPos = this.player.getMesh().position;
+      this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
+      
+      // Update all health bar positions to follow their entities
+      this.uiSystem.update(this.renderingSystem.getCamera());
+    } else if (this.playerDead) {
+      // Player is dead, update respawn countdown
+      this.updateRespawnCountdown(deltaTime);
     }
     
-    this.renderingSystem.setCameraPosition(playerPos.x, 20, playerPos.z);
-    
-    this.uiSystem.update(this.renderingSystem.getCamera());
-    
+    // Render the scene
     this.renderingSystem.render();
     
+    // Update mobile controls position if needed
+    if (this.isMobile && this.mobileControlsElement) {
+      this.updateMobileControlsPosition();
+    }
+    
+    // Continue game loop
     requestAnimationFrame(this.loop.bind(this));
   }
   
@@ -623,76 +788,82 @@ class GameEngine {
   }
   
   private shootZombie(): void {
-    if (this.gameOver) return;
+    if (!this.player.isAlive) return;
     
-    const playerPos = this.player.getMesh().position;
-    const direction = this.player.getForwardDirection();
+    // Play gunshot sound
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
     
-    const bulletStart = new THREE.Vector3(playerPos.x, playerPos.y + 1, playerPos.z);
-    const bulletEnd = new THREE.Vector3(
-      playerPos.x + direction.x * 50,
-      playerPos.y + direction.y * 50 + 1,
-      playerPos.z + direction.z * 50
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+    
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.3);
+    
+    // Create bullet effect from player
+    const playerMesh = this.player.getMesh();
+    const bulletStart = new THREE.Vector3(
+      playerMesh.position.x,
+      playerMesh.position.y + 0.75, // Adjust height to be at "gun" level
+      playerMesh.position.z
     );
     
-    const points = [bulletStart, bulletEnd];
-    const bulletGeometry = new THREE.BufferGeometry().setFromPoints(points);
-    const bulletMaterial = new THREE.LineBasicMaterial({ color: 0xffff00 });
-    const bulletTrail = new THREE.Line(bulletGeometry, bulletMaterial);
+    // Get direction player is facing
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(playerMesh.quaternion);
     
-    this.renderingSystem.addToScene(bulletTrail);
-    
-    setTimeout(() => {
-      this.renderingSystem.removeFromScene(bulletTrail);
-    }, 100);
-    
+    // Use raycaster to detect zombie hits
     const raycaster = new THREE.Raycaster(bulletStart, direction.normalize());
+    const zombieMeshes = this.zombies
+      .filter(z => z.isAlive)
+      .map(z => z.getMesh());
     
-    for (const zombie of this.zombies) {
-      if (!zombie.isAlive) continue;
+    // Cast ray to see if we hit any zombies
+    const intersects = raycaster.intersectObjects(zombieMeshes, true);
+    
+    // Create a bullet trail effect
+    this.createBulletTrail(bulletStart, direction);
+    
+    if (intersects.length > 0) {
+      // We hit something! 
+      const hitObject = intersects[0].object;
       
-      const zombiePos = zombie.getMesh().position;
-      
-      const toZombie = new THREE.Vector3(
-        zombiePos.x - playerPos.x,
-        0,
-        zombiePos.z - playerPos.z
-      ).normalize();
-      
-      const dot = direction.dot(toZombie);
-      
-      if (dot > 0.866) {
-        const distance = new THREE.Vector3(
-          zombiePos.x - playerPos.x,
-          zombiePos.y - playerPos.y,
-          zombiePos.z - playerPos.z
-        ).length();
+      // Find which zombie was hit
+      let hitZombie: Zombie | null = null;
+      for (const zombie of this.zombies) {
+        if (!zombie.isAlive) continue;
         
-        if (distance < 20) {
-          zombie.takeDamage(25);
-          this.uiSystem.updateHealthBar(zombie);
-          
-          if (!zombie.isAlive) {
-            this.gameScore += 100;
-            this.player.addKill();
-            this.updateScoreboard();
-            
-            console.log('Score: ' + this.gameScore);
-            
-            setTimeout(() => {
-              this.uiSystem.removeHealthBar(zombie);
-              this.renderingSystem.removeFromScene(zombie.getMesh());
-              
-              const index = this.zombies.indexOf(zombie);
-              if (index > -1) {
-                this.zombies.splice(index, 1);
-              }
-            }, 3000);
-          }
-          
+        if (zombie.getMesh() === hitObject || zombie.getMesh().children.includes(hitObject)) {
+          hitZombie = zombie;
           break;
         }
       }
+      
+      if (hitZombie) {
+        console.log('Hit zombie!');
+        hitZombie.takeDamage(50); // High damage - one shot kills most zombies
+        
+        if (!hitZombie.isAlive) {
+          // Update player kills and game score
+          this.player.addKill();
+          this.gameScore += 100; // Base score for zombie kill
+          
+          // Bonus points for distance
+          const distance = hitZombie.getMesh().position.distanceTo(playerMesh.position);
+          const distanceBonus = Math.floor(distance * 10);
+          this.gameScore += distanceBonus;
+          
+          console.log(`Killed zombie at distance ${distance.toFixed(2)}m! +${100 + distanceBonus} points`);
+        }
+      }
+    } else {
+      // Missed shot
+      console.log('Shot fired but missed!');
     }
   }
 
@@ -702,53 +873,211 @@ class GameEngine {
     
     console.log('Player died! Score: ' + this.gameScore);
     
+    // Start respawn countdown
     this.respawnCountdown = this.respawnTime;
-    this.createRespawnCountdownText();
     
-    const deathMessage = document.createElement('div');
-    deathMessage.id = 'death-message';
-    deathMessage.style.position = 'absolute';
-    deathMessage.style.top = '40%';
-    deathMessage.style.left = '50%';
-    deathMessage.style.transform = 'translate(-50%, -50%)';
-    deathMessage.style.color = 'red';
-    deathMessage.style.fontSize = '64px';
-    deathMessage.style.fontWeight = 'bold';
-    deathMessage.style.textShadow = '2px 2px 4px #000000';
-    deathMessage.textContent = 'YOU DIED';
+    // Store player stats for respawn comparison
+    const finalWave = this.waveNumber;
+    const finalKills = this.player.kills;
+    const finalTime = this.player.timeSurvived;
+    const finalScore = this.gameScore;
     
-    document.body.appendChild(deathMessage);
+    // Create a single, clean death overlay
+    const deathOverlay = document.createElement('div');
+    deathOverlay.id = 'death-overlay';
+    deathOverlay.style.position = 'absolute';
+    deathOverlay.style.top = '50%';
+    deathOverlay.style.left = '50%';
+    deathOverlay.style.transform = 'translate(-50%, -50%)';
+    deathOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    deathOverlay.style.padding = '30px';
+    deathOverlay.style.borderRadius = '10px';
+    deathOverlay.style.color = 'white';
+    deathOverlay.style.textAlign = 'center';
+    deathOverlay.style.zIndex = '1001';
+    deathOverlay.style.minWidth = '320px';
+    deathOverlay.style.maxWidth = '90%';
+    deathOverlay.style.boxShadow = '0 0 30px rgba(255, 0, 0, 0.5)';
+    deathOverlay.style.border = '2px solid rgba(255, 0, 0, 0.5)';
     
-    setTimeout(() => {
-      const deathMsg = document.getElementById('death-message');
-      if (deathMsg) {
-        document.body.removeChild(deathMsg);
+    // Calculate time survived
+    const minutes = Math.floor(finalTime / 60);
+    const seconds = Math.floor(finalTime % 60);
+    
+    // Create different HTML based on device type
+    let respawnControlsHTML = '';
+    
+    if (this.isMobile) {
+      // Mobile version with button
+      respawnControlsHTML = `
+        <div id="respawn-countdown" style="color: red; font-size: 64px; font-weight: bold; margin-bottom: 20px;">${Math.ceil(this.respawnCountdown)}</div>
+        <button id="respawn-button" style="
+          background-color: #ff3333;
+          color: white;
+          border: none;
+          padding: 15px 30px;
+          border-radius: 50px;
+          font-size: 18px;
+          font-weight: bold;
+          margin-top: 10px;
+          box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+          cursor: pointer;
+          width: 80%;
+          transition: background-color 0.2s;
+          -webkit-tap-highlight-color: transparent;
+        ">RESPAWN NOW</button>
+      `;
+    } else {
+      // Desktop version with keyboard instruction
+      respawnControlsHTML = `
+        <div id="respawn-countdown" style="color: red; font-size: 64px; font-weight: bold; margin-bottom: 20px;">${Math.ceil(this.respawnCountdown)}</div>
+        <div style="font-size: 16px; color: #aaa;">Press R to respawn immediately</div>
+      `;
+    }
+    
+    // Create the content with a sleeker design and numerical countdown
+    deathOverlay.innerHTML = `
+      <div style="color: red; font-size: 48px; font-weight: bold; margin-bottom: 25px; text-shadow: 2px 2px 4px #000; letter-spacing: 2px;">YOU DIED</div>
+      <div style="font-size: 18px; margin-bottom: 10px; color: #eee;">Wave Reached: ${finalWave}</div>
+      <div style="font-size: 18px; margin-bottom: 10px; color: #eee;">Zombies Killed: ${finalKills}</div>
+      <div style="font-size: 18px; margin-bottom: 10px; color: #eee;">Time Survived: ${minutes}:${seconds.toString().padStart(2, '0')}</div>
+      <div style="font-size: 18px; margin-bottom: 30px; color: #eee;">Score: ${finalScore}</div>
+      ${respawnControlsHTML}
+    `;
+    
+    document.body.appendChild(deathOverlay);
+    
+    // Add event listener for the respawn button if on mobile
+    if (this.isMobile) {
+      const respawnButton = document.getElementById('respawn-button');
+      if (respawnButton) {
+        // Add active state styling for touch feedback
+        respawnButton.addEventListener('touchstart', () => {
+          if (respawnButton) {
+            respawnButton.style.backgroundColor = '#cc0000';
+            respawnButton.style.transform = 'scale(0.98)';
+          }
+        });
+        
+        respawnButton.addEventListener('touchend', () => {
+          if (respawnButton) {
+            respawnButton.style.backgroundColor = '#ff3333';
+            respawnButton.style.transform = 'scale(1)';
+          }
+          this.respawnCountdown = 0; // Trigger immediate respawn
+        });
       }
-    }, 3000);
+    }
+  }
+
+  private resetGameDifficulty(): void {
+    // Reset to initial wave and spawn rate
+    this.zombieSpawnRate = this.initialZombieSpawnRate;
+    this.waveNumber = 1;
+    this.timeSinceLastDifficultyIncrease = 0;
+    
+    // Update wave indicator
+    this.updateWaveIndicator(true);
+    
+    // Show reset notification
+    this.showResetNotification();
+  }
+  
+  private showResetNotification(): void {
+    const notification = document.createElement('div');
+    notification.id = 'reset-notification';
+    notification.style.position = 'absolute';
+    notification.style.top = '40%';
+    notification.style.left = '50%';
+    notification.style.transform = 'translate(-50%, -50%)';
+    notification.style.color = 'white';
+    notification.style.fontSize = '36px';
+    notification.style.fontWeight = 'bold';
+    notification.style.textShadow = '2px 2px 4px #000000';
+    notification.style.zIndex = '1001';
+    notification.style.transition = 'opacity 0.5s ease-in-out, transform 0.5s ease-in-out';
+    notification.style.opacity = '0';
+    notification.style.textAlign = 'center';
+    notification.innerHTML = `<div>Game Reset</div><div style="font-size: 24px;">Starting from Wave 1</div>`;
+    
+    document.body.appendChild(notification);
+    
+    // Animate in
+    setTimeout(() => {
+      notification.style.opacity = '1';
+    }, 10);
+    
+    // Animate out and remove after a delay
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      notification.style.transform = 'translate(-50%, -70%)';
+      
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 500);
+    }, 2500);
   }
 
   public stop(): void {
+    // Clean up event listeners
     window.removeEventListener('keydown', this.handleKeyDown.bind(this));
     window.removeEventListener('resize', this.handleWindowResize.bind(this));
     
-    const respawnDiv = document.getElementById('respawn-countdown');
-    if (respawnDiv) {
-      document.body.removeChild(respawnDiv);
-    }
-    
-    const deathMessage = document.getElementById('death-message');
-    if (deathMessage) {
-      document.body.removeChild(deathMessage);
-    }
+    // Clean up all UI elements
+    this.cleanupRespawnUI();
     
     if (this.scoreboardElement) {
       document.body.removeChild(this.scoreboardElement);
     }
     
+    if (this.waveIndicatorElement) {
+      document.body.removeChild(this.waveIndicatorElement);
+    }
+    
+    if (this.mobileControlsElement) {
+      document.body.removeChild(this.mobileControlsElement);
+    }
+    
+    const waveNotification = document.getElementById('wave-notification');
+    if (waveNotification) {
+      document.body.removeChild(waveNotification);
+    }
+    
+    const resetNotification = document.getElementById('reset-notification');
+    if (resetNotification) {
+      document.body.removeChild(resetNotification);
+    }
+    
+    // Clean up systems
     this.uiSystem.cleanup();
     
+    // Stop the game loop
     this.gameOver = true;
     console.log('Game stopped!');
+  }
+
+  private createBulletTrail(start: THREE.Vector3, direction: THREE.Vector3): void {
+    // Create a line showing the bullet trajectory
+    const bulletLength = 50; // How far the bullet travels
+    const end = new THREE.Vector3().copy(start).addScaledVector(direction, bulletLength);
+    
+    const bulletGeometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+    const bulletMaterial = new THREE.LineBasicMaterial({ 
+      color: 0xffff00,
+      transparent: true,
+      opacity: 0.8
+    });
+    const bulletLine = new THREE.Line(bulletGeometry, bulletMaterial);
+    
+    // Add the bullet trail to the scene
+    this.renderingSystem.addToScene(bulletLine);
+    
+    // Remove the bullet trail after a short time
+    setTimeout(() => {
+      this.renderingSystem.removeFromScene(bulletLine);
+    }, 100);
   }
 }
 

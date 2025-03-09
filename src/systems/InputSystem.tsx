@@ -1,27 +1,4 @@
 // This file processes user input for the game
-import { useEffect, useRef } from 'react';
-
-// React hook for handling input in React components
-export const useInput = () => {
-  const keys = useRef<{ [key: string]: boolean }>({ w: false, a: false, s: false, d: false });
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key in keys.current) keys.current[e.key] = true;
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key in keys.current) keys.current[e.key] = false;
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
-
-  return keys;
-};
 
 // InputSystem class for use in the game engine
 class InputSystem {

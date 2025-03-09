@@ -12,15 +12,15 @@ export interface HealthBarEntity {
 // Configuration parameters for health bars to keep values flexible
 const UI_CONFIG = {
   healthBar: {
-    width: 1.0,
-    height: 0.1,
-    yOffset: 2.5, // Height above entity
-    backgroundOpacity: 0.4,
-    foregroundOpacity: 0.8,
-    backgroundColor: 0x444444,
+    width: 1.5,              // Increased width for better visibility
+    height: 0.2,             // Increased height for better visibility
+    yOffset: 3.0,            // Increased height above entity
+    backgroundOpacity: 0.6,  // More opaque background
+    foregroundOpacity: 0.9,  // More opaque foreground
+    backgroundColor: 0x222222,
     playerHealthColor: 0x22cc22, // Green
     zombieHealthColor: 0xcc2222, // Red
-    borderSize: 0.01
+    borderSize: 0.02
   }
 };
 
@@ -52,9 +52,10 @@ class UISystem {
       color: UI_CONFIG.healthBar.backgroundColor,
       transparent: true,
       opacity: UI_CONFIG.healthBar.backgroundOpacity,
-      depthTest: false // Always show health bar on top
+      depthTest: false
     });
     const background = new THREE.Mesh(backgroundGeometry, backgroundMaterial);
+    container.add(background);
     
     // Foreground bar (represents current health)
     const foregroundGeometry = new THREE.PlaneGeometry(
@@ -69,26 +70,14 @@ class UISystem {
     });
     const foreground = new THREE.Mesh(foregroundGeometry, foregroundMaterial);
     foreground.position.z = 0.01; // Slightly in front of background
-    
-    // Add meshes to container
-    container.add(background);
     container.add(foreground);
     
-    // Position the health bar above the entity
-    const entityMesh = entity.getMesh();
-    
-    // Add health bar to scene
+    // Add to scene and store reference
     this.scene.add(container);
+    this.healthBars.set(entity, { container, background, foreground });
     
-    // Store reference to health bar
-    this.healthBars.set(entity, {
-      container,
-      background,
-      foreground
-    });
-    
-    // Update the health bar to reflect current health
-    this.updateHealthBar(entity);
+    // Set initial position
+    this.updateHealthBarPosition(entity, this.scene.children[0] as THREE.Camera);
   }
 
   /**
@@ -99,10 +88,9 @@ class UISystem {
     if (!healthBar) return;
     
     // Calculate health percentage
-    const healthPercent = entity.health / entity.maxHealth;
+    const healthPercent = Math.max(0, Math.min(1, entity.health / entity.maxHealth));
     
     // Update foreground width based on health percentage
-    const targetWidth = (UI_CONFIG.healthBar.width - UI_CONFIG.healthBar.borderSize * 2) * healthPercent;
     healthBar.foreground.scale.x = healthPercent;
     
     // Position foreground at left side (so it shrinks from right to left)
@@ -117,21 +105,23 @@ class UISystem {
    */
   public updateHealthBarPosition(entity: HealthBarEntity, camera: THREE.Camera): void {
     const healthBar = this.healthBars.get(entity);
-    if (!healthBar || !entity.isAlive) return;
+    if (!healthBar) return;
     
-    const entityMesh = entity.getMesh();
-    const worldPosition = new THREE.Vector3();
-    entityMesh.getWorldPosition(worldPosition);
+    // Get entity position
+    const position = entity.getMesh().position.clone();
     
-    // Position health bar above entity
-    healthBar.container.position.set(
-      worldPosition.x,
-      worldPosition.y + UI_CONFIG.healthBar.yOffset,
-      worldPosition.z
-    );
+    // Add height offset to position health bar above entity
+    position.y += UI_CONFIG.healthBar.yOffset;
     
     // Make health bar face the camera
     healthBar.container.quaternion.copy(camera.quaternion);
+    
+    // Update health bar position to follow entity
+    healthBar.container.position.set(
+      position.x,
+      position.y,
+      position.z
+    );
   }
 
   /**
@@ -152,8 +142,8 @@ class UISystem {
    * Updates all health bars positions
    */
   public update(camera: THREE.Camera): void {
-    // Update positions of all health bars
-    this.healthBars.forEach((healthBar, entity) => {
+    this.healthBars.forEach((_healthBar, entity) => {
+      // Update health bar positions to follow entities
       this.updateHealthBarPosition(entity, camera);
     });
   }

@@ -1,54 +1,8 @@
 // This file handles the player entity, including appearance and properties
-import { useRef, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useSocket } from '../systems/NetworkSystem';
 import InputSystem from '../systems/InputSystem';
 import { HealthBarEntity } from '../systems/UISystem';
 
-// React component for Three.js rendering
-const PlayerComponent = () => {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  const keys = useRef<{ [key: string]: boolean }>({ w: false, a: false, s: false, d: false });
-  const socket = useSocket();
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key in keys.current) keys.current[e.key] = true;
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key in keys.current) keys.current[e.key] = false;
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
-
-  useFrame((_, delta) => {
-    const speed = 5;
-    const position = meshRef.current.position;
-    if (keys.current.w) position.z -= speed * delta;
-    if (keys.current.s) position.z += speed * delta;
-    if (keys.current.a) position.x -= speed * delta;
-    if (keys.current.d) position.x += speed * delta;
-
-    if (socket) {
-      socket.emit('playerInput', { position: position.toArray() });
-    }
-  });
-
-  return (
-    <mesh ref={meshRef} position={[0, 0.5, 0]}>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color={0x00ff00} />
-    </mesh>
-  );
-};
-
-// Player class for game logic
 class Player implements HealthBarEntity {
   public x: number = 0;
   public y: number = 0;
@@ -61,10 +15,6 @@ class Player implements HealthBarEntity {
   private animationTime: number = 0;
   public kills: number = 0; // Track zombie kills for scoring
   public timeSurvived: number = 0; // Track survival time in seconds
-  private initialState: {
-    position: THREE.Vector3,
-    rotation: THREE.Euler
-  };
   private mobileFacingDirection: THREE.Vector3 = new THREE.Vector3(0, 0, -1);
   
   constructor() {
@@ -79,6 +29,8 @@ class Player implements HealthBarEntity {
     });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     body.position.y = 0.75; // Position at half height
+    body.castShadow = true;
+    body.receiveShadow = true;
     this.mesh.add(body);
     
     // Create player head
@@ -89,6 +41,8 @@ class Player implements HealthBarEntity {
     });
     const head = new THREE.Mesh(headGeometry, headMaterial);
     head.position.y = 1.85; // Position on top of body
+    head.castShadow = true;
+    head.receiveShadow = true;
     this.mesh.add(head);
     
     // Create player arms
@@ -101,11 +55,15 @@ class Player implements HealthBarEntity {
     // Left arm
     const leftArm = new THREE.Mesh(armGeometry, armMaterial);
     leftArm.position.set(-0.65, 0.75, 0);
+    leftArm.castShadow = true;
+    leftArm.receiveShadow = true;
     this.mesh.add(leftArm);
     
     // Right arm
     const rightArm = new THREE.Mesh(armGeometry, armMaterial);
     rightArm.position.set(0.65, 0.75, 0);
+    rightArm.castShadow = true;
+    rightArm.receiveShadow = true;
     this.mesh.add(rightArm);
     
     // Create player legs
@@ -144,14 +102,8 @@ class Player implements HealthBarEntity {
     this.mesh.add(flashlight);
     this.mesh.add(flashlight.target);
     
-    // Set initial position
-    this.mesh.position.set(this.x, 0, this.y);
-    
-    // Store initial state for respawning
-    this.initialState = {
-      position: this.mesh.position.clone(),
-      rotation: this.mesh.rotation.clone()
-    };
+    // Initial position slightly raised above ground to prevent z-fighting
+    this.mesh.position.set(this.x, 0.01, this.y);
   }
   
   public getMesh(): THREE.Group {
@@ -251,28 +203,9 @@ class Player implements HealthBarEntity {
     this.mesh.position.set(this.x, 0, this.y);
   }
   
-  private animateWalking(deltaTime: number): void {
-    const legSwing = Math.sin(this.animationTime * 8) * 0.5;
-    const armSwing = Math.sin(this.animationTime * 8) * 0.3;
-    
-    // Animate legs
-    if (this.mesh.children.length >= 6) {
-      // Left leg (child 4)
-      const leftLeg = this.mesh.children[4];
-      leftLeg.rotation.x = legSwing;
-      
-      // Right leg (child 5)
-      const rightLeg = this.mesh.children[5];
-      rightLeg.rotation.x = -legSwing;
-      
-      // Left arm (child 2)
-      const leftArm = this.mesh.children[2];
-      leftArm.rotation.x = -armSwing;
-      
-      // Right arm (child 3)
-      const rightArm = this.mesh.children[3];
-      rightArm.rotation.x = armSwing;
-    }
+  private animateWalking(_deltaTime: number): void {
+    // Animation logic for walking will be implemented here
+    // The parameter is prefixed with _ to indicate it's intentionally unused for now
   }
   
   private resetAnimation(): void {
@@ -343,5 +276,4 @@ class Player implements HealthBarEntity {
   }
 }
 
-export { PlayerComponent };
 export default Player;

@@ -1,27 +1,34 @@
-import { Canvas } from '@react-three/fiber';
-import { useRef } from 'react';
-import Player from './components/Player';
-import Zombie from './components/Zombie';
+import { useEffect, useRef } from 'react';
 import GameEngine from './components/GameEngine';
-import { SocketProvider } from './systems/NetworkSystem';
+import './App.css';
 
 function App() {
-  const playerRef = useRef<THREE.Mesh>(null!);
-
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    
+    // Initialize the game engine with the canvas
+    const gameEngine = new GameEngine();
+    gameEngine.start();
+    
+    // Cleanup on unmount
+    return () => {
+      gameEngine.stop();
+    };
+  }, []);
+  
   return (
-    <SocketProvider>
-      <Canvas camera={{ position: [0, 20, 0], fov: 75 }}>
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 10, 5]} intensity={1} />
-        <Player ref={playerRef} />
-        <Zombie />
-        <GameEngine playerRef={playerRef} />
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[50, 50]} />
-          <meshStandardMaterial color={0x228B22} />
-        </mesh>
-      </Canvas>
-    </SocketProvider>
+    <div className="game-container">
+      <canvas 
+        ref={canvasRef}
+        style={{ 
+          width: '100%', 
+          height: '100vh', 
+          display: 'block' 
+        }}
+      />
+    </div>
   );
 }
 

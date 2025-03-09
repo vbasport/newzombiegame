@@ -1,19 +1,7 @@
 // This file handles visual rendering of game elements
-import Player from '../components/Player';
-import Zombie from '../components/Zombie';
 import * as THREE from 'three';
 
-interface Entity {
-  x: number;
-  y: number;
-  isAlive: boolean;
-}
-
 class RenderingSystem {
-  private canvas: HTMLCanvasElement | null = null;
-  private context: CanvasRenderingContext2D | null = null;
-  private width: number = 800;
-  private height: number = 600;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
@@ -22,55 +10,75 @@ class RenderingSystem {
     // Initialize THREE.js components
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87ceeb); // Sky blue background
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = true;
-    document.body.appendChild(this.renderer.domElement);
     
-    // Set up lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    // Set up camera with better field of view
+    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    this.camera.position.set(0, 15, 15); // Initial position
+    this.camera.lookAt(0, 0, 0);
+    
+    // Initialize renderer with existing canvas or create a new one
+    const existingCanvas = document.querySelector('canvas');
+    this.renderer = new THREE.WebGLRenderer({ 
+      antialias: true,
+      canvas: existingCanvas || undefined
+    });
+    
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Better shadow quality
+    
+    // Only append to document if we created a new canvas
+    if (!existingCanvas) {
+      document.body.appendChild(this.renderer.domElement);
+    }
+    
+    // Set up scene and lighting
+    this.setupEnvironment();
+    
+    // Handle window resize
+    window.addEventListener('resize', this.handleResize.bind(this));
+  }
+  
+  private setupEnvironment() {
+    // Create a ground plane
+    const groundGeometry = new THREE.PlaneGeometry(200, 200);
+    const groundMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0x228B22, // Green color for ground
+      roughness: 0.8
+    });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+    
+    // Add ambient light (brighter)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     this.scene.add(ambientLight);
     
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    // Add directional light (sunlight)
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
     directionalLight.position.set(50, 100, 50);
     directionalLight.castShadow = true;
+    
+    // Improve shadow quality
     directionalLight.shadow.mapSize.width = 2048;
     directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.camera.near = 0.5;
+    directionalLight.shadow.camera.far = 500;
     directionalLight.shadow.camera.left = -100;
     directionalLight.shadow.camera.right = 100;
     directionalLight.shadow.camera.top = 100;
     directionalLight.shadow.camera.bottom = -100;
+    
     this.scene.add(directionalLight);
     
-    // Add a large ground plane for the world
-    const groundSize = 200;
-    const planeGeometry = new THREE.PlaneGeometry(groundSize, groundSize);
-    const planeMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x4d8c57, // Green grass color
-      roughness: 0.8,
-      metalness: 0.2
-    });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-    plane.rotation.x = -Math.PI / 2;
-    plane.receiveShadow = true;
-    this.scene.add(plane);
+    // Add fog to the scene for atmosphere (less dense)
+    this.scene.fog = new THREE.FogExp2(0xcccccc, 0.01);
     
-    // Add a grid to help with spatial awareness
-    const gridHelper = new THREE.GridHelper(groundSize, 20, 0x000000, 0x000000);
-    gridHelper.position.y = 0.01; // Slightly above ground to prevent z-fighting
-    this.scene.add(gridHelper);
-    
-    // Add some trees and obstacles to make the world more interesting
+    // Add environment decorations
     this.addTrees();
     this.addRocks();
-    
-    // Initialize camera position
-    this.camera.position.set(0, 20, 20);
-    this.camera.lookAt(new THREE.Vector3(0, 0, 0));
-    
-    // Handle window resize
-    window.addEventListener('resize', this.handleResize.bind(this));
   }
 
   private addTrees() {
@@ -156,16 +164,13 @@ class RenderingSystem {
     this.scene.remove(mesh);
   }
 
-  public setCameraPosition(x: number, y: number, z: number): void {
-    // Position camera above and slightly behind player for better third-person view
-    const cameraHeight = 15;
-    const cameraDistance = 20;
+  public setCameraPosition(x: number, _y: number, z: number): void {
+    // Position camera at a third-person perspective following the player
+    // Increased height and distance for a more zoomed out view
+    const cameraHeight = 25;      // Height above the player (increased from 15)
+    const cameraDistance = 25;    // Distance behind the player (increased from 15)
     
-    // Calculate position behind player
-    const playerForward = new THREE.Vector3(0, 0, -1); // Assuming player faces -z
-    const cameraOffset = playerForward.multiplyScalar(-cameraDistance);
-    
-    this.camera.position.set(x + cameraOffset.x, cameraHeight, z + cameraOffset.z);
+    this.camera.position.set(x, cameraHeight, z + cameraDistance);
     this.camera.lookAt(new THREE.Vector3(x, 0, z));
   }
 
