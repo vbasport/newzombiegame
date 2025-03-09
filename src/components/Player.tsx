@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import InputSystem from '../systems/InputSystem';
 import { HealthBarEntity } from '../systems/UISystem';
+import { Weapon, WeaponType } from './Weapon';
 
 class Player implements HealthBarEntity {
   public x: number = 0;
@@ -17,6 +18,7 @@ class Player implements HealthBarEntity {
   public timeSurvived: number = 0; // Track survival time in seconds
   private mobileFacingDirection: THREE.Vector3 = new THREE.Vector3(0, 0, -1);
   private playerName: string = 'Player'; // Default player name
+  private weapon: Weapon; // Player's current weapon
   
   constructor(playerName?: string) {
     // Set player name if provided
@@ -89,28 +91,11 @@ class Player implements HealthBarEntity {
     rightLeg.position.set(0.25, -0.25, 0);
     this.mesh.add(rightLeg);
 
-    // Create a weapon/gun
-    const weaponGeometry = new THREE.CylinderGeometry(0.1, 0.15, 0.6, 8);
-    const weaponMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x222222,
-      metalness: 0.7,
-      roughness: 0.3
-    });
-    const weapon = new THREE.Mesh(weaponGeometry, weaponMaterial);
-    weapon.rotation.x = Math.PI / 2; // Orient horizontally
-    weapon.position.set(0.5, 0.75, 0.6); // Position in front of right hand
-    this.mesh.add(weapon);
-    
-    // Add a subtle glow to the weapon tip instead of a flashlight
-    const glowGeometry = new THREE.SphereGeometry(0.08, 8, 8);
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff6600,
-      transparent: true,
-      opacity: 0.6
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    glow.position.set(0.5, 0.75, 0.9); // Position at tip of weapon
-    this.mesh.add(glow);
+    // Create and add weapon
+    this.weapon = new Weapon(WeaponType.PISTOL);
+    const weaponMesh = this.weapon.mesh;
+    weaponMesh.position.set(0.5, 0.75, 0.6); // Position in front of right hand
+    this.mesh.add(weaponMesh);
     
     // Initial position slightly raised above ground to prevent z-fighting
     this.mesh.position.set(this.x, 0.01, this.y);
@@ -155,33 +140,47 @@ class Player implements HealthBarEntity {
   }
   
   private handleMobileMovement(deltaTime: number, inputSystem: InputSystem): void {
-    const joystickInput = inputSystem.getJoystickInput();
+    const moveJoystickInput = inputSystem.getMoveJoystickInput();
+    const aimJoystickInput = inputSystem.getAimJoystickInput();
     
     // Only update movement if there's meaningful joystick input
-    if (Math.abs(joystickInput.x) > 0.1 || Math.abs(joystickInput.y) > 0.1) {
+    if (Math.abs(moveJoystickInput.x) > 0.1 || Math.abs(moveJoystickInput.y) > 0.1) {
       // Get input values (already normalized)
-      const dx = joystickInput.x;
-      const dz = joystickInput.y;
+      const dx = moveJoystickInput.x;
+      const dz = moveJoystickInput.y;
       
       // Update position
       this.x += dx * this.speed * deltaTime;
       this.y += dz * this.speed * deltaTime;
-      
-      // Store direction for shooting (normalized)
-      this.mobileFacingDirection.set(dx, 0, dz).normalize();
-      
-      // Update direction vector for rendering
-      this.direction.copy(this.mobileFacingDirection);
-      
-      // Rotate player to face movement direction
-      const angle = Math.atan2(dx, dz);
-      this.mesh.rotation.y = angle;
       
       // Animate walking
       this.animateWalking(deltaTime);
     } else {
       // Reset animation when still
       this.resetAnimation();
+    }
+    
+    // Handle aiming direction separately from movement
+    if (aimJoystickInput.isActive && (Math.abs(aimJoystickInput.x) > 0.1 || Math.abs(aimJoystickInput.y) > 0.1)) {
+      // Use aim joystick for direction
+      this.mobileFacingDirection.set(aimJoystickInput.x, 0, aimJoystickInput.y).normalize();
+      
+      // Update direction vector for rendering
+      this.direction.copy(this.mobileFacingDirection);
+      
+      // Rotate player to face aiming direction
+      const angle = Math.atan2(aimJoystickInput.x, aimJoystickInput.y);
+      this.mesh.rotation.y = angle;
+    } else if (Math.abs(moveJoystickInput.x) > 0.1 || Math.abs(moveJoystickInput.y) > 0.1) {
+      // If no aim input but moving, face movement direction
+      this.mobileFacingDirection.set(moveJoystickInput.x, 0, moveJoystickInput.y).normalize();
+      
+      // Update direction vector for rendering
+      this.direction.copy(this.mobileFacingDirection);
+      
+      // Rotate player to face movement direction
+      const angle = Math.atan2(moveJoystickInput.x, moveJoystickInput.y);
+      this.mesh.rotation.y = angle;
     }
     
     // Update mesh position
@@ -297,6 +296,38 @@ class Player implements HealthBarEntity {
   
   public getForwardDirection(): THREE.Vector3 {
     return this.direction.clone();
+  }
+  
+  /**
+   * Get the player's current weapon
+   */
+  public getWeapon(): Weapon {
+    return this.weapon;
+  }
+  
+  /**
+   * Set a new weapon for the player
+   * @param weaponType The type of weapon to equip
+   */
+  public setWeapon(weaponType: WeaponType): void {
+    // Remove current weapon mesh
+    const oldWeaponMesh = this.weapon.mesh;
+    this.mesh.remove(oldWeaponMesh);
+    
+    // Create new weapon
+    this.weapon = new Weapon(weaponType);
+    
+    // Add new weapon mesh
+    const weaponMesh = this.weapon.mesh;
+    weaponMesh.position.set(0.5, 0.75, 0.6); // Position in front of right hand
+    this.mesh.add(weaponMesh);
+  }
+  
+  /**
+   * Get the position of the weapon tip for bullet origin
+   */
+  public getWeaponTipPosition(): THREE.Vector3 {
+    return this.weapon.getWeaponTipPosition(this.mesh.position, this.direction);
   }
 }
 

@@ -19,10 +19,10 @@ class GameEngine {
   private initialZombieSpawnRate: number = 5; // Initial time between spawns in seconds
   private zombieSpawnRate: number = 5; // Current spawn rate (will decrease over time)
   private maxZombies: number = 50; // Increased to allow more zombies on screen
-  private difficultyScalingFactor: number = 0.95; // How quickly difficulty increases (< 1.0)
+  private difficultyScalingFactor: number = 0.92; // How quickly difficulty increases (< 1.0) - made more aggressive
   private difficultyIncreaseInterval: number = 10; // Seconds between difficulty increases
   private timeSinceLastDifficultyIncrease: number = 0;
-  private minSpawnRate: number = 0.5; // Fastest possible spawn rate (seconds)
+  private minSpawnRate: number = 0.3; // Fastest possible spawn rate (seconds) - made faster
   private waveNumber: number = 1; // Track the current wave number
   private gameScore: number = 0;
   private gameOver: boolean = false;
@@ -34,6 +34,13 @@ class GameEngine {
   private mobileControlsElement: HTMLElement | null = null; // Mobile controls DOM element
   private isMobile: boolean = false; // Detect if using mobile device
   private waveIndicatorElement: HTMLElement | null = null; // Wave indicator element
+  private lastMeleeTime: number = 0; // Track when the last melee attack was performed
+  private meleeCooldown: number = 1.5; // Cooldown time in seconds between melee attacks
+  private meleeRange: number = 3; // Range of melee attack in units
+  private meleeKnockback: number = 20; // How far zombies are knocked back by melee - increased to 20
+  private meleeCooldownIndicator: HTMLElement | null = null; // Visual indicator for melee cooldown
+  private lastShootTime: number = 0; // Track when the last shot was fired
+  private shootCooldownIndicator: HTMLElement | null = null; // Visual indicator for shoot cooldown
 
   constructor(playerName: string = 'Player') {
     this.playerName = playerName;
@@ -48,6 +55,9 @@ class GameEngine {
     
     // Create unified UI container first
     this.createUnifiedUI();
+    
+    // Setup melee cooldown UI
+    this.setupUI();
     
     if (this.isMobile) {
       this.createMobileControls();
@@ -78,177 +88,328 @@ class GameEngine {
   }
 
   private createMobileControls(): void {
-    if (this.mobileControlsElement) {
-      document.body.removeChild(this.mobileControlsElement);
-    }
+    // Create container for mobile controls
+    this.mobileControlsElement = document.createElement('div');
+    this.mobileControlsElement.id = 'mobile-controls';
+    this.mobileControlsElement.style.position = 'fixed';
+    this.mobileControlsElement.style.bottom = '0';
+    this.mobileControlsElement.style.left = '0';
+    this.mobileControlsElement.style.width = '100%';
+    this.mobileControlsElement.style.height = '30%';
+    this.mobileControlsElement.style.display = 'flex';
+    this.mobileControlsElement.style.justifyContent = 'space-between';
+    this.mobileControlsElement.style.alignItems = 'center';
+    this.mobileControlsElement.style.pointerEvents = 'none';
+    this.mobileControlsElement.style.zIndex = '1000';
+    document.body.appendChild(this.mobileControlsElement);
     
-    const controlsContainer = document.createElement('div');
-    controlsContainer.id = 'mobile-controls';
-    controlsContainer.style.position = 'fixed';
-    controlsContainer.style.bottom = '20px';
-    controlsContainer.style.left = '0';
-    controlsContainer.style.width = '100%';
-    controlsContainer.style.display = 'flex';
-    controlsContainer.style.justifyContent = 'space-between';
-    controlsContainer.style.pointerEvents = 'none';
-    controlsContainer.style.zIndex = '1000';
+    // Create left joystick container (movement)
+    const leftJoystickContainer = document.createElement('div');
+    leftJoystickContainer.id = 'left-joystick-container';
+    leftJoystickContainer.style.position = 'relative';
+    leftJoystickContainer.style.width = '120px';
+    leftJoystickContainer.style.height = '120px';
+    leftJoystickContainer.style.borderRadius = '50%';
+    leftJoystickContainer.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    leftJoystickContainer.style.margin = '0 0 20px 20px';
+    leftJoystickContainer.style.pointerEvents = 'auto';
+    leftJoystickContainer.style.touchAction = 'none';
+    this.mobileControlsElement.appendChild(leftJoystickContainer);
     
-    const joystickContainer = document.createElement('div');
-    joystickContainer.id = 'joystick-container';
-    joystickContainer.style.width = '120px';
-    joystickContainer.style.height = '120px';
-    joystickContainer.style.marginLeft = '20px';
-    joystickContainer.style.marginBottom = '20px';
-    joystickContainer.style.borderRadius = '50%';
-    joystickContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
-    joystickContainer.style.border = '2px solid rgba(255, 255, 255, 0.5)';
-    joystickContainer.style.position = 'relative';
-    joystickContainer.style.pointerEvents = 'auto';
+    // Create joystick knob for left joystick
+    const leftJoystickKnob = document.createElement('div');
+    leftJoystickKnob.id = 'left-joystick-knob';
+    leftJoystickKnob.style.position = 'absolute';
+    leftJoystickKnob.style.top = '50%';
+    leftJoystickKnob.style.left = '50%';
+    leftJoystickKnob.style.width = '50px';
+    leftJoystickKnob.style.height = '50px';
+    leftJoystickKnob.style.borderRadius = '50%';
+    leftJoystickKnob.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
+    leftJoystickKnob.style.transform = 'translate(-50%, -50%)';
+    leftJoystickKnob.style.pointerEvents = 'none';
+    leftJoystickContainer.appendChild(leftJoystickKnob);
     
-    const joystickKnob = document.createElement('div');
-    joystickKnob.id = 'joystick-knob';
-    joystickKnob.style.width = '50px';
-    joystickKnob.style.height = '50px';
-    joystickKnob.style.borderRadius = '50%';
-    joystickKnob.style.backgroundColor = 'rgba(255, 255, 255, 0.7)';
-    joystickKnob.style.border = '2px solid rgba(0, 0, 0, 0.3)';
-    joystickKnob.style.position = 'absolute';
-    joystickKnob.style.top = '50%';
-    joystickKnob.style.left = '50%';
-    joystickKnob.style.transform = 'translate(-50%, -50%)';
-    joystickKnob.style.pointerEvents = 'none';
+    // Create center container for melee button
+    const centerContainer = document.createElement('div');
+    centerContainer.style.display = 'flex';
+    centerContainer.style.flexDirection = 'column';
+    centerContainer.style.alignItems = 'center';
+    centerContainer.style.justifyContent = 'center';
+    centerContainer.style.pointerEvents = 'none';
+    this.mobileControlsElement.appendChild(centerContainer);
     
-    joystickContainer.appendChild(joystickKnob);
+    // Create melee button in center
+    const meleeButton = document.createElement('div');
+    meleeButton.id = 'melee-button';
+    meleeButton.className = 'mobile-button';
+    meleeButton.innerHTML = 'MELEE';
+    meleeButton.style.position = 'relative';
+    meleeButton.style.width = '80px';
+    meleeButton.style.height = '80px';
+    meleeButton.style.backgroundColor = 'rgba(255, 100, 0, 0.5)';
+    meleeButton.style.borderRadius = '50%';
+    meleeButton.style.display = 'flex';
+    meleeButton.style.justifyContent = 'center';
+    meleeButton.style.alignItems = 'center';
+    meleeButton.style.color = 'white';
+    meleeButton.style.fontWeight = 'bold';
+    meleeButton.style.userSelect = 'none';
+    meleeButton.style.touchAction = 'manipulation';
+    meleeButton.style.pointerEvents = 'auto';
+    meleeButton.style.marginBottom = '20px';
+    centerContainer.appendChild(meleeButton);
     
-    const actionsContainer = document.createElement('div');
-    actionsContainer.id = 'actions-container';
-    actionsContainer.style.display = 'flex';
-    actionsContainer.style.flexDirection = 'column';
-    actionsContainer.style.gap = '15px';
-    actionsContainer.style.marginRight = '20px';
-    actionsContainer.style.marginBottom = '20px';
+    // Create reload button below melee button
+    const reloadButton = document.createElement('div');
+    reloadButton.id = 'reload-button';
+    reloadButton.className = 'mobile-button';
+    reloadButton.innerHTML = 'RELOAD';
+    reloadButton.style.position = 'relative';
+    reloadButton.style.width = '70px';
+    reloadButton.style.height = '40px';
+    reloadButton.style.backgroundColor = 'rgba(50, 150, 255, 0.5)';
+    reloadButton.style.borderRadius = '10px';
+    reloadButton.style.display = 'flex';
+    reloadButton.style.justifyContent = 'center';
+    reloadButton.style.alignItems = 'center';
+    reloadButton.style.color = 'white';
+    reloadButton.style.fontWeight = 'bold';
+    reloadButton.style.userSelect = 'none';
+    reloadButton.style.touchAction = 'manipulation';
+    reloadButton.style.pointerEvents = 'auto';
+    centerContainer.appendChild(reloadButton);
     
-    const shootButton = document.createElement('div');
-    shootButton.id = 'shoot-button';
-    shootButton.style.width = '80px';
-    shootButton.style.height = '80px';
-    shootButton.style.borderRadius = '50%';
-    shootButton.style.backgroundColor = 'rgba(255, 50, 50, 0.7)';
-    shootButton.style.border = '2px solid rgba(255, 255, 255, 0.5)';
-    shootButton.style.display = 'flex';
-    shootButton.style.justifyContent = 'center';
-    shootButton.style.alignItems = 'center';
-    shootButton.style.fontSize = '16px';
-    shootButton.style.fontWeight = 'bold';
-    shootButton.style.color = 'white';
-    shootButton.style.pointerEvents = 'auto';
-    shootButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.3)';
-    shootButton.textContent = 'SHOOT';
+    // Create right joystick container (aiming/shooting)
+    const rightJoystickContainer = document.createElement('div');
+    rightJoystickContainer.id = 'right-joystick-container';
+    rightJoystickContainer.style.position = 'relative';
+    rightJoystickContainer.style.width = '120px';
+    rightJoystickContainer.style.height = '120px';
+    rightJoystickContainer.style.borderRadius = '50%';
+    rightJoystickContainer.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    rightJoystickContainer.style.margin = '0 20px 20px 0';
+    rightJoystickContainer.style.pointerEvents = 'auto';
+    rightJoystickContainer.style.touchAction = 'none';
+    this.mobileControlsElement.appendChild(rightJoystickContainer);
     
-    actionsContainer.appendChild(shootButton);
+    // Create joystick knob for right joystick
+    const rightJoystickKnob = document.createElement('div');
+    rightJoystickKnob.id = 'right-joystick-knob';
+    rightJoystickKnob.style.position = 'absolute';
+    rightJoystickKnob.style.top = '50%';
+    rightJoystickKnob.style.left = '50%';
+    rightJoystickKnob.style.width = '50px';
+    rightJoystickKnob.style.height = '50px';
+    rightJoystickKnob.style.borderRadius = '50%';
+    rightJoystickKnob.style.backgroundColor = 'rgba(255, 100, 100, 0.5)';
+    rightJoystickKnob.style.transform = 'translate(-50%, -50%)';
+    rightJoystickKnob.style.pointerEvents = 'none';
+    rightJoystickContainer.appendChild(rightJoystickKnob);
     
-    controlsContainer.appendChild(joystickContainer);
-    controlsContainer.appendChild(actionsContainer);
-    
-    document.body.appendChild(controlsContainer);
-    
-    this.mobileControlsElement = controlsContainer;
-    
-    this.setupMobileControlsEvents(joystickContainer, shootButton);
+    // Set up event listeners for both joysticks and melee button
+    this.setupMobileControlsEvents(leftJoystickContainer, rightJoystickContainer, meleeButton, reloadButton);
   }
   
-  private setupMobileControlsEvents(joystickContainer: HTMLElement, shootButton: HTMLElement): void {
-    let isJoystickActive = false;
-    let joystickOrigin = { x: 0, y: 0 };
-    const knob = document.getElementById('joystick-knob');
-    const joystickMaxDistance = 40; // Max distance the joystick can move
+  private setupMobileControlsEvents(
+    moveJoystickContainer: HTMLElement, 
+    aimJoystickContainer: HTMLElement, 
+    meleeButton: HTMLElement,
+    reloadButton: HTMLElement
+  ): void {
+    // Movement joystick variables
+    let isMoveJoystickActive = false;
+    let moveJoystickOrigin = { x: 0, y: 0 };
+    const leftKnob = document.getElementById('left-joystick-knob');
+    const moveJoystickMaxDistance = 40; // Max distance the joystick can move
     
-    // Joystick touch events
-    joystickContainer.addEventListener('touchstart', (e) => {
-      isJoystickActive = true;
+    // Aim joystick variables
+    let isAimJoystickActive = false;
+    let aimJoystickOrigin = { x: 0, y: 0 };
+    const rightKnob = document.getElementById('right-joystick-knob');
+    const aimJoystickMaxDistance = 40; // Max distance the joystick can move
+    
+    // Movement joystick touch events
+    moveJoystickContainer.addEventListener('touchstart', (e) => {
+      isMoveJoystickActive = true;
       const touch = e.touches[0];
-      const rect = joystickContainer.getBoundingClientRect();
-      joystickOrigin.x = touch.clientX - rect.left;
-      joystickOrigin.y = touch.clientY - rect.top;
+      const rect = moveJoystickContainer.getBoundingClientRect();
+      moveJoystickOrigin.x = touch.clientX - rect.left;
+      moveJoystickOrigin.y = touch.clientY - rect.top;
       
       // Set knob position
-      if (knob) {
-        knob.style.left = `${joystickOrigin.x}px`;
-        knob.style.top = `${joystickOrigin.y}px`;
-        knob.style.transform = 'translate(-50%, -50%)';
+      if (leftKnob) {
+        leftKnob.style.left = `${moveJoystickOrigin.x}px`;
+        leftKnob.style.top = `${moveJoystickOrigin.y}px`;
+        leftKnob.style.transform = 'translate(-50%, -50%)';
       }
       
       e.preventDefault();
     });
     
-    joystickContainer.addEventListener('touchmove', (e) => {
-      if (!isJoystickActive || !knob) return;
+    moveJoystickContainer.addEventListener('touchmove', (e) => {
+      if (!isMoveJoystickActive || !leftKnob) return;
       
       const touch = e.touches[0];
-      const rect = joystickContainer.getBoundingClientRect();
+      const rect = moveJoystickContainer.getBoundingClientRect();
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
       
       // Calculate direction vector
-      let dx = x - joystickOrigin.x;
-      let dy = y - joystickOrigin.y;
+      let dx = x - moveJoystickOrigin.x;
+      let dy = y - moveJoystickOrigin.y;
       
       // Normalize if exceeds max distance
       const distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance > joystickMaxDistance) {
-        dx = dx / distance * joystickMaxDistance;
-        dy = dy / distance * joystickMaxDistance;
+      if (distance > moveJoystickMaxDistance) {
+        dx = dx / distance * moveJoystickMaxDistance;
+        dy = dy / distance * moveJoystickMaxDistance;
       }
       
       // Update knob position
-      knob.style.left = `${joystickOrigin.x + dx}px`;
-      knob.style.top = `${joystickOrigin.y + dy}px`;
+      leftKnob.style.left = `${moveJoystickOrigin.x + dx}px`;
+      leftKnob.style.top = `${moveJoystickOrigin.y + dy}px`;
       
       // Update input system with normalized direction
-      const normalizedDx = dx / joystickMaxDistance;
-      const normalizedDy = dy / joystickMaxDistance;
-      this.inputSystem.setMobileJoystickInput(normalizedDx, normalizedDy);
+      const normalizedDx = dx / moveJoystickMaxDistance;
+      const normalizedDy = dy / moveJoystickMaxDistance;
+      this.inputSystem.setMoveJoystickInput(normalizedDx, normalizedDy);
       
       e.preventDefault();
     });
     
-    joystickContainer.addEventListener('touchend', () => {
-      isJoystickActive = false;
+    moveJoystickContainer.addEventListener('touchend', (e) => {
+      isMoveJoystickActive = false;
       
       // Reset knob position
-      if (knob) {
-        knob.style.left = '50%';
-        knob.style.top = '50%';
-        knob.style.transform = 'translate(-50%, -50%)';
+      if (leftKnob) {
+        leftKnob.style.left = '50%';
+        leftKnob.style.top = '50%';
+        leftKnob.style.transform = 'translate(-50%, -50%)';
       }
       
       // Reset input
-      this.inputSystem.setMobileJoystickInput(0, 0);
-    });
-    
-    // Shoot button events
-    shootButton.addEventListener('touchstart', (e) => {
-      // Set input state
-      this.inputSystem.setMobileButtonInput('shoot', true);
-      
-      // Visual feedback
-      shootButton.style.transform = 'scale(0.9)';
-      shootButton.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
-      
-      // Perform shoot action
-      this.shootZombie();
+      this.inputSystem.setMoveJoystickInput(0, 0);
       
       e.preventDefault();
     });
     
-    shootButton.addEventListener('touchend', (e) => {
-      // Reset input state
-      this.inputSystem.setMobileButtonInput('shoot', false);
+    moveJoystickContainer.addEventListener('touchcancel', (e) => {
+      isMoveJoystickActive = false;
       
-      // Reset visual state
-      shootButton.style.transform = 'scale(1)';
-      shootButton.style.backgroundColor = 'rgba(255, 0, 0, 0.6)';
+      // Reset knob position
+      if (leftKnob) {
+        leftKnob.style.left = '50%';
+        leftKnob.style.top = '50%';
+        leftKnob.style.transform = 'translate(-50%, -50%)';
+      }
       
+      // Reset input
+      this.inputSystem.setMoveJoystickInput(0, 0);
+      
+      e.preventDefault();
+    });
+    
+    // Aim joystick touch events
+    aimJoystickContainer.addEventListener('touchstart', (e) => {
+      isAimJoystickActive = true;
+      const touch = e.touches[0];
+      const rect = aimJoystickContainer.getBoundingClientRect();
+      aimJoystickOrigin.x = touch.clientX - rect.left;
+      aimJoystickOrigin.y = touch.clientY - rect.top;
+      
+      // Set knob position
+      if (rightKnob) {
+        rightKnob.style.left = `${aimJoystickOrigin.x}px`;
+        rightKnob.style.top = `${aimJoystickOrigin.y}px`;
+        rightKnob.style.transform = 'translate(-50%, -50%)';
+      }
+      
+      e.preventDefault();
+    });
+    
+    aimJoystickContainer.addEventListener('touchmove', (e) => {
+      if (!isAimJoystickActive || !rightKnob) return;
+      
+      const touch = e.touches[0];
+      const rect = aimJoystickContainer.getBoundingClientRect();
+      const x = touch.clientX - rect.left;
+      const y = touch.clientY - rect.top;
+      
+      // Calculate direction vector
+      let dx = x - aimJoystickOrigin.x;
+      let dy = y - aimJoystickOrigin.y;
+      
+      // Normalize if exceeds max distance
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > aimJoystickMaxDistance) {
+        dx = dx / distance * aimJoystickMaxDistance;
+        dy = dy / distance * aimJoystickMaxDistance;
+      }
+      
+      // Update knob position
+      rightKnob.style.left = `${aimJoystickOrigin.x + dx}px`;
+      rightKnob.style.top = `${aimJoystickOrigin.y + dy}px`;
+      
+      // Update input system with normalized direction
+      const normalizedDx = dx / aimJoystickMaxDistance;
+      const normalizedDy = dy / aimJoystickMaxDistance;
+      this.inputSystem.setAimJoystickInput(normalizedDx, normalizedDy, true);
+      
+      e.preventDefault();
+    });
+    
+    aimJoystickContainer.addEventListener('touchend', (e) => {
+      isAimJoystickActive = false;
+      
+      // Reset knob position
+      if (rightKnob) {
+        rightKnob.style.left = '50%';
+        rightKnob.style.top = '50%';
+        rightKnob.style.transform = 'translate(-50%, -50%)';
+      }
+      
+      // Reset input
+      this.inputSystem.setAimJoystickInput(0, 0, false);
+      
+      e.preventDefault();
+    });
+    
+    aimJoystickContainer.addEventListener('touchcancel', (e) => {
+      isAimJoystickActive = false;
+      
+      // Reset knob position
+      if (rightKnob) {
+        rightKnob.style.left = '50%';
+        rightKnob.style.top = '50%';
+        rightKnob.style.transform = 'translate(-50%, -50%)';
+      }
+      
+      // Reset input
+      this.inputSystem.setAimJoystickInput(0, 0, false);
+      
+      e.preventDefault();
+    });
+    
+    // Melee button touch events
+    meleeButton.addEventListener('touchstart', (e) => {
+      this.inputSystem.setMobileButtonInput('melee', true);
+      e.preventDefault();
+    });
+    
+    meleeButton.addEventListener('touchend', (e) => {
+      this.inputSystem.setMobileButtonInput('melee', false);
+      e.preventDefault();
+    });
+    
+    // Reload button touch events
+    reloadButton.addEventListener('touchstart', (e) => {
+      this.inputSystem.setMobileButtonInput('reload', true);
+      e.preventDefault();
+    });
+    
+    reloadButton.addEventListener('touchend', (e) => {
+      this.inputSystem.setMobileButtonInput('reload', false);
       e.preventDefault();
     });
   }
@@ -320,6 +481,12 @@ class GameEngine {
     gameInfoRow.style.justifyContent = 'space-between';
     gameInfoRow.style.alignItems = 'center';
     
+    // Create wave indicator
+    this.createWaveIndicator(gameInfoRow);
+    
+    // Create ammo indicator
+    this.createAmmoIndicator(gameInfoRow);
+    
     // Add rows and separator to stats bar
     statsBar.appendChild(playerStatsRow);
     statsBar.appendChild(separator);
@@ -346,9 +513,56 @@ class GameEngine {
     
     // Create scoreboard in player stats row
     this.createScoreboard(playerStatsRow);
+  }
+  
+  /**
+   * Create ammo indicator in the UI
+   */
+  private createAmmoIndicator(container: HTMLElement): void {
+    const ammoContainer = document.createElement('div');
+    ammoContainer.id = 'ammo-indicator';
+    ammoContainer.style.display = 'flex';
+    ammoContainer.style.alignItems = 'center';
+    ammoContainer.style.marginRight = '15px';
     
-    // Create wave indicator and player count in game info row
-    this.createWaveIndicator(gameInfoRow);
+    const ammoIcon = document.createElement('span');
+    ammoIcon.innerHTML = '🔫';
+    ammoIcon.style.fontSize = '16px';
+    ammoIcon.style.marginRight = '5px';
+    
+    const ammoText = document.createElement('span');
+    ammoText.id = 'ammo-text';
+    ammoText.style.fontSize = '14px';
+    ammoText.style.fontWeight = 'bold';
+    ammoText.style.color = 'white';
+    
+    ammoContainer.appendChild(ammoIcon);
+    ammoContainer.appendChild(ammoText);
+    
+    container.appendChild(ammoContainer);
+    
+    // Initial update
+    this.updateAmmoIndicator();
+  }
+  
+  /**
+   * Update the ammo indicator with current weapon ammo
+   */
+  private updateAmmoIndicator(): void {
+    const ammoText = document.getElementById('ammo-text');
+    if (!ammoText) return;
+    
+    const weapon = this.player.getWeapon();
+    ammoText.textContent = `${weapon.ammo}/${weapon.maxAmmo}`;
+    
+    // Change color based on ammo level
+    if (weapon.ammo === 0) {
+      ammoText.style.color = 'red';
+    } else if (weapon.ammo < weapon.maxAmmo * 0.3) {
+      ammoText.style.color = 'orange';
+    } else {
+      ammoText.style.color = 'white';
+    }
   }
   
   /**
@@ -715,16 +929,36 @@ class GameEngine {
   private increaseDifficulty(): void {
     this.waveNumber++;
     
+    // Make zombies spawn faster as waves progress
     this.zombieSpawnRate = Math.max(
       this.minSpawnRate,
       this.zombieSpawnRate * this.difficultyScalingFactor
     );
     
-    const waveZombies = Math.min(this.waveNumber + 2, 10);
+    // Spawn more zombies per wave as the game progresses
+    const waveZombies = Math.min(this.waveNumber + 2, 15);
     for (let i = 0; i < waveZombies; i++) {
       setTimeout(() => {
         this.spawnZombie();
       }, i * 500);
+    }
+    
+    // Increase zombie speed and health with each wave
+    if (this.waveNumber > 1) {
+      for (const zombie of this.zombies) {
+        if (zombie.isAlive) {
+          // Increase speed by 5% each wave, up to double the original speed
+          zombie.speed = Math.min(zombie.speed * 1.05, zombie.speed * 2);
+          
+          // Increase max health by 10% each wave, up to triple the original health
+          const healthIncrease = zombie.maxHealth * 0.1;
+          zombie.maxHealth = Math.min(zombie.maxHealth + healthIncrease, zombie.maxHealth * 3);
+          zombie.health += healthIncrease;
+          
+          // Update health bar to reflect new max health
+          this.uiSystem.updateHealthBar(zombie);
+        }
+      }
     }
     
     this.updateWaveIndicator(true);
@@ -790,6 +1024,7 @@ class GameEngine {
     // Update player if alive
     if (this.player.isAlive) {
       this.player.update(deltaTime, this.inputSystem);
+      this.uiSystem.updateHealthBar(this.player);
       
       // Send player position update to server every 100ms
       if (Math.random() < 0.1) { // Approximately every 10 frames at 60fps
@@ -804,58 +1039,73 @@ class GameEngine {
       // Handle respawn countdown
       this.updateRespawnCountdown(deltaTime);
     }
-      
-      // Update zombie spawning
-      this.zombieSpawnTime += deltaTime;
-      if (this.zombieSpawnTime >= this.zombieSpawnRate && this.zombies.length < this.maxZombies) {
-        this.spawnZombie();
-        this.zombieSpawnTime = 0;
-      }
-      
-      // Update all zombies
-      for (const zombie of this.zombies) {
-        if (zombie.isAlive) {
-          // Pass player position to zombie update instead of player object
-          zombie.update(deltaTime, this.player.getMesh().position);
-          this.uiSystem.updateHealthBar(zombie);
+    
+    // Handle player input
+    this.handleInput();
+    
+    // Update zombie spawning
+    this.zombieSpawnTime += deltaTime;
+    if (this.zombieSpawnTime >= this.zombieSpawnRate && this.zombies.length < this.maxZombies) {
+      this.spawnZombie();
+      this.zombieSpawnTime = 0;
+    }
+    
+    // Update melee cooldown indicator
+    this.updateMeleeCooldownIndicator();
+    
+    // Update shoot cooldown indicator
+    this.updateShootCooldownIndicator();
+    
+    // Update all zombies
+    for (const zombie of this.zombies) {
+      if (zombie.isAlive) {
+        // Pass player position to zombie update instead of player object
+        zombie.update(deltaTime, this.player.getMesh().position);
+        this.uiSystem.updateHealthBar(zombie);
+        
+        // Check distance for zombie attack
+        const zombiePos = zombie.getMesh().position;
+        const playerPos = this.player.getMesh().position;
+        const dx = playerPos.x - zombiePos.x;
+        const dz = playerPos.z - zombiePos.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        
+        // Zombie damages player when close enough
+        if (distance < 1.5 && this.player.isAlive) {
+          const damage = 5 * deltaTime; // Damage scaled by time
+          this.player.takeDamage(damage);
           
-          // Check distance for zombie attack
-          const zombiePos = zombie.getMesh().position;
-          const playerPos = this.player.getMesh().position;
-          const dx = playerPos.x - zombiePos.x;
-          const dz = playerPos.z - zombiePos.z;
-          const distance = Math.sqrt(dx * dx + dz * dz);
-          
-          // Zombie damages player when close enough
-          if (distance < 1.5 && this.player.isAlive) {
-            const damage = 5 * deltaTime; // Damage scaled by time
-            this.player.takeDamage(damage);
-            
-            // Check if player died from this attack
-            if (!this.player.isAlive) {
-              this.handlePlayerDeath();
-            }
+          // Check if player died from this attack
+          if (!this.player.isAlive) {
+            this.handlePlayerDeath();
           }
         }
       }
-      
-      // Update scoreboard
-      this.updateScoreboard();
-      
-      // Scale difficulty over time
-      this.timeSinceLastDifficultyIncrease += deltaTime;
-      if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
-        this.increaseDifficulty();
-        this.timeSinceLastDifficultyIncrease = 0;
-      }
-      
-      // Update camera position to follow player
-      const playerPos = this.player.getMesh().position;
-      this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
-      
-      // Update all health bar positions to follow their entities
-      this.uiSystem.update(this.renderingSystem.getCamera());
+    }
     
+    // Clean up dead zombies periodically
+    this.cleanupDeadZombies();
+    
+    // Update scoreboard
+    this.updateScoreboard();
+    
+    // Update ammo indicator
+    this.updateAmmoIndicator();
+    
+    // Scale difficulty over time
+    this.timeSinceLastDifficultyIncrease += deltaTime;
+    if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
+      this.increaseDifficulty();
+      this.timeSinceLastDifficultyIncrease = 0;
+    }
+    
+    // Update camera position to follow player
+    const playerPos = this.player.getMesh().position;
+    this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
+    
+    // Update all health bar positions to follow their entities
+    this.uiSystem.update(this.renderingSystem.getCamera());
+  
     // Render the scene
     this.renderingSystem.render();
     
@@ -910,6 +1160,43 @@ class GameEngine {
     }
   }
   
+  private handleInput(): void {
+    const input = this.inputSystem.getInput();
+    const currentTime = performance.now() / 1000;
+    
+    // Get weapon cooldown from player's current weapon
+    const weapon = this.player.getWeapon();
+    const shootCooldown = weapon.cooldown;
+    
+    // Handle shooting with keyboard or aim joystick
+    if (this.inputSystem.isShooting() && this.player.isAlive) {
+      if (currentTime - this.lastShootTime >= shootCooldown) {
+        // Can shoot - weapon is ready
+        if (weapon.canFire()) {
+          this.shootZombie();
+          weapon.fire(); // Consume ammo
+          this.lastShootTime = currentTime;
+        } else {
+          // Out of ammo - show feedback
+          this.showOutOfAmmoFeedback();
+        }
+      } else {
+        // Weapon is on cooldown - show visual feedback
+        this.showWeaponCooldownFeedback();
+      }
+    }
+    
+    // Handle melee attack
+    if (input['e'] && this.player.isAlive) {
+      this.meleeAttack();
+    }
+    
+    // Handle weapon reload
+    if (input['r'] && this.player.isAlive) {
+      weapon.reload();
+    }
+  }
+  
   private shootZombie(): void {
     if (!this.player.isAlive) return;
     
@@ -929,28 +1216,27 @@ class GameEngine {
     oscillator.start();
     oscillator.stop(audioContext.currentTime + 0.3);
     
+    // Get the player's weapon
+    const weapon = this.player.getWeapon();
+    
     // Create bullet effect from player
     const playerMesh = this.player.getMesh();
     
     // Get the weapon position for bullet start
-    let bulletStart = new THREE.Vector3(
-      playerMesh.position.x,
-      playerMesh.position.y + 0.75, // Adjust height to be at "gun" level
-      playerMesh.position.z
-    );
+    const bulletStart = this.player.getWeaponTipPosition();
     
     // Get direction player is facing
     const direction = this.player.getForwardDirection();
     
-    // Define bullet damage
-    const bulletDamage = 50; // High damage - one shot kills most zombies
+    // Define bullet damage based on weapon
+    const bulletDamage = weapon.damage;
     
     // Create a bullet trail effect
     this.createBulletTrail(bulletStart, direction);
     
     // SIMPLIFIED APPROACH: Find zombies in front of the player within a certain range and angle
-    const maxRange = 50;
-    const maxAngleCos = 0.95; // About 18 degrees cone - narrower for more precise hits
+    const maxRange = weapon.range;
+    const maxAngleCos = weapon.accuracy; // Use weapon accuracy for targeting cone
     
     // Log all zombies for debugging
     console.log(`Total zombies: ${this.zombies.length}, Alive zombies: ${this.zombies.filter(z => z.isAlive).length}`);
@@ -1182,6 +1468,14 @@ class GameEngine {
       document.body.removeChild(this.mobileControlsElement);
     }
     
+    if (this.meleeCooldownIndicator) {
+      document.body.removeChild(this.meleeCooldownIndicator);
+    }
+    
+    if (this.shootCooldownIndicator) {
+      document.body.removeChild(this.shootCooldownIndicator);
+    }
+    
     const waveNotification = document.getElementById('wave-notification');
     if (waveNotification) {
       document.body.removeChild(waveNotification);
@@ -1270,6 +1564,475 @@ class GameEngine {
         this.showSinglePlayerModeMessage();
       }
     }, 3000); // Give it some time to try connecting
+  }
+
+  // Add a method to clean up dead zombies
+  private cleanupDeadZombies(): void {
+    // Filter out dead zombies that have been dead for more than 5 seconds
+    const currentTime = performance.now() / 1000;
+    
+    for (let i = this.zombies.length - 1; i >= 0; i--) {
+      const zombie = this.zombies[i];
+      
+      if (!zombie.isAlive && zombie.deathTime && (currentTime - zombie.deathTime > 5)) {
+        // Remove from scene and UI
+        this.uiSystem.removeHealthBar(zombie);
+        this.renderingSystem.removeFromScene(zombie.getMesh());
+        
+        // Remove from array
+        this.zombies.splice(i, 1);
+      }
+    }
+  }
+
+  private showWeaponCooldownFeedback(): void {
+    // Get the weapon from the player mesh
+    const playerMesh = this.player.getMesh();
+    const weaponPosition = new THREE.Vector3(
+      playerMesh.position.x,
+      playerMesh.position.y + 0.75, // Adjust height to be at "gun" level
+      playerMesh.position.z
+    );
+    
+    // Get direction player is facing
+    const direction = this.player.getForwardDirection();
+    
+    // Create a small flash at the weapon position
+    const flashGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0.3
+    });
+    
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    
+    // Position the flash at the weapon tip
+    flash.position.set(
+      weaponPosition.x + direction.x * 0.6,
+      weaponPosition.y,
+      weaponPosition.z + direction.z * 0.6
+    );
+    
+    // Add to scene
+    this.renderingSystem.addToScene(flash);
+    
+    // Animate the flash
+    let scale = 1.0;
+    const animateFlash = () => {
+      scale -= 0.1;
+      if (scale > 0) {
+        flash.scale.set(scale, scale, scale);
+        flash.material.opacity = scale * 0.3;
+        requestAnimationFrame(animateFlash);
+      } else {
+        this.renderingSystem.removeFromScene(flash);
+      }
+    };
+    
+    // Start animation
+    animateFlash();
+  }
+
+  private meleeAttack(): void {
+    if (!this.player.isAlive) return;
+    
+    // Check cooldown
+    const currentTime = performance.now() / 1000;
+    if (currentTime - this.lastMeleeTime < this.meleeCooldown) {
+      // Still on cooldown
+      return;
+    }
+    
+    // Set last melee time to current time
+    this.lastMeleeTime = currentTime;
+    
+    // Play melee sound
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+    
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.2);
+    
+    // Create melee effect animation
+    this.createMeleeEffect();
+    
+    // Apply camera shake for impact feel
+    this.applyCameraShake(0.3, 0.5);
+    
+    // Get player position and direction
+    const playerPos = this.player.getMesh().position;
+    const playerDirection = this.player.getForwardDirection();
+    
+    // Find zombies in melee range
+    const meleeZombies: Zombie[] = [];
+    
+    for (const zombie of this.zombies) {
+      if (!zombie.isAlive) continue;
+      
+      const zombiePos = zombie.getMesh().position;
+      const dx = zombiePos.x - playerPos.x;
+      const dz = zombiePos.z - playerPos.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      
+      // Check if zombie is within melee range
+      if (distance <= this.meleeRange) {
+        // Calculate dot product to check if zombie is in front of player
+        const directionToZombie = new THREE.Vector3(dx, 0, dz).normalize();
+        const dotProduct = directionToZombie.dot(playerDirection);
+        
+        // If dot product is positive, zombie is in front of player
+        if (dotProduct > 0) {
+          meleeZombies.push(zombie);
+        }
+      }
+    }
+    
+    // Apply damage and knockback to zombies in range
+    for (const zombie of meleeZombies) {
+      // Apply small damage
+      zombie.takeDamage(15);
+      
+      // Calculate knockback direction
+      const zombiePos = zombie.getMesh().position;
+      const dx = zombiePos.x - playerPos.x;
+      const dz = zombiePos.z - playerPos.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      
+      if (distance > 0) {
+        // Normalize direction
+        const knockbackDirection = new THREE.Vector3(dx / distance, 0, dz / distance);
+        
+        // Apply ragdoll effect with knockback
+        zombie.applyRagdollEffect(knockbackDirection, this.meleeKnockback);
+      }
+      
+      // Update health bar
+      this.uiSystem.updateHealthBar(zombie);
+    }
+    
+    console.log(`Melee attack hit ${meleeZombies.length} zombies`);
+  }
+  
+  private createMeleeEffect(): void {
+    // Get player position and direction
+    const playerPos = this.player.getMesh().position;
+    const playerDirection = this.player.getForwardDirection();
+    
+    // Create a cone geometry for the melee swing effect
+    const swingGeometry = new THREE.ConeGeometry(1.5, this.meleeRange, 12);
+    const swingMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff6600,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide
+    });
+    
+    const swingMesh = new THREE.Mesh(swingGeometry, swingMaterial);
+    
+    // Position and rotate the swing effect
+    swingMesh.position.set(
+      playerPos.x + playerDirection.x * (this.meleeRange / 2),
+      playerPos.y + 1,
+      playerPos.z + playerDirection.z * (this.meleeRange / 2)
+    );
+    
+    // Rotate to face the right direction
+    swingMesh.lookAt(
+      playerPos.x + playerDirection.x * this.meleeRange,
+      playerPos.y + 1,
+      playerPos.z + playerDirection.z * this.meleeRange
+    );
+    swingMesh.rotateX(Math.PI / 2);
+    
+    // Add to scene
+    this.renderingSystem.addToScene(swingMesh);
+    
+    // Create impact particles
+    this.createMeleeImpactParticles(playerPos, playerDirection);
+    
+    // Remove after animation completes
+    setTimeout(() => {
+      this.renderingSystem.removeFromScene(swingMesh);
+    }, 300);
+  }
+  
+  private createMeleeImpactParticles(playerPos: THREE.Vector3, direction: THREE.Vector3): void {
+    // Create a group to hold all particles
+    const particleGroup = new THREE.Group();
+    
+    // Position the group at the impact point
+    const impactPoint = new THREE.Vector3(
+      playerPos.x + direction.x * this.meleeRange,
+      playerPos.y + 1,
+      playerPos.z + direction.z * this.meleeRange
+    );
+    particleGroup.position.copy(impactPoint);
+    
+    // Create 15 particles
+    const particleCount = 15;
+    for (let i = 0; i < particleCount; i++) {
+      // Create a small sphere for each particle
+      const particleGeometry = new THREE.SphereGeometry(0.1, 4, 4);
+      const particleMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff8800,
+        transparent: true,
+        opacity: 0.8
+      });
+      
+      const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+      
+      // Set random initial position within a small radius
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.random() * 0.5;
+      particle.position.set(
+        Math.cos(angle) * radius,
+        Math.random() * 1 - 0.5,
+        Math.sin(angle) * radius
+      );
+      
+      // Store velocity for animation
+      (particle as any).velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 5,
+        Math.random() * 3 + 1,
+        (Math.random() - 0.5) * 5
+      );
+      
+      particleGroup.add(particle);
+    }
+    
+    // Add the particle group to the scene
+    this.renderingSystem.addToScene(particleGroup);
+    
+    // Animate and remove particles
+    let frameCount = 0;
+    const animateParticles = () => {
+      frameCount++;
+      
+      // Update each particle
+      particleGroup.children.forEach((object) => {
+        // Cast to any to avoid type issues
+        const particle = object as any;
+        
+        // Apply velocity
+        particle.position.x += particle.velocity.x * 0.03;
+        particle.position.y += particle.velocity.y * 0.03;
+        particle.position.z += particle.velocity.z * 0.03;
+        
+        // Apply gravity
+        particle.velocity.y -= 0.1;
+        
+        // Reduce size and opacity
+        particle.scale.multiplyScalar(0.95);
+        if (particle.material instanceof THREE.MeshBasicMaterial) {
+          particle.material.opacity *= 0.95;
+        }
+      });
+      
+      // Continue animation for 20 frames
+      if (frameCount < 20) {
+        requestAnimationFrame(animateParticles);
+      } else {
+        // Remove particles from scene
+        this.renderingSystem.removeFromScene(particleGroup);
+      }
+    };
+    
+    // Start animation
+    animateParticles();
+  }
+
+  private setupUI(): void {
+    // Create melee cooldown indicator
+    this.meleeCooldownIndicator = document.createElement('div');
+    this.meleeCooldownIndicator.id = 'melee-cooldown';
+    this.meleeCooldownIndicator.style.position = 'absolute';
+    this.meleeCooldownIndicator.style.bottom = '110px';
+    this.meleeCooldownIndicator.style.right = '20px';
+    this.meleeCooldownIndicator.style.width = '80px';
+    this.meleeCooldownIndicator.style.height = '5px';
+    this.meleeCooldownIndicator.style.backgroundColor = '#333';
+    this.meleeCooldownIndicator.style.borderRadius = '2px';
+    
+    // Inner progress bar
+    const cooldownProgress = document.createElement('div');
+    cooldownProgress.id = 'melee-cooldown-progress';
+    cooldownProgress.style.width = '100%';
+    cooldownProgress.style.height = '100%';
+    cooldownProgress.style.backgroundColor = '#ff6600';
+    cooldownProgress.style.borderRadius = '2px';
+    cooldownProgress.style.transformOrigin = 'left';
+    cooldownProgress.style.transform = 'scaleX(1)';
+    
+    this.meleeCooldownIndicator.appendChild(cooldownProgress);
+    document.body.appendChild(this.meleeCooldownIndicator);
+    
+    // Create shoot cooldown indicator
+    this.shootCooldownIndicator = document.createElement('div');
+    this.shootCooldownIndicator.id = 'shoot-cooldown';
+    this.shootCooldownIndicator.style.position = 'absolute';
+    this.shootCooldownIndicator.style.bottom = '120px';
+    this.shootCooldownIndicator.style.right = '20px';
+    this.shootCooldownIndicator.style.width = '80px';
+    this.shootCooldownIndicator.style.height = '5px';
+    this.shootCooldownIndicator.style.backgroundColor = '#333';
+    this.shootCooldownIndicator.style.borderRadius = '2px';
+    
+    // Inner progress bar
+    const shootCooldownProgress = document.createElement('div');
+    shootCooldownProgress.id = 'shoot-cooldown-progress';
+    shootCooldownProgress.style.width = '100%';
+    shootCooldownProgress.style.height = '100%';
+    shootCooldownProgress.style.backgroundColor = '#ff3333';
+    shootCooldownProgress.style.borderRadius = '2px';
+    shootCooldownProgress.style.transformOrigin = 'left';
+    shootCooldownProgress.style.transform = 'scaleX(1)';
+    
+    this.shootCooldownIndicator.appendChild(shootCooldownProgress);
+    document.body.appendChild(this.shootCooldownIndicator);
+  }
+
+  private updateMeleeCooldownIndicator(): void {
+    if (!this.meleeCooldownIndicator) return;
+    
+    const cooldownProgress = document.getElementById('melee-cooldown-progress');
+    if (!cooldownProgress) return;
+    
+    const currentTime = performance.now() / 1000;
+    const elapsedTime = currentTime - this.lastMeleeTime;
+    
+    if (elapsedTime < this.meleeCooldown) {
+      // Still on cooldown
+      const progress = elapsedTime / this.meleeCooldown;
+      cooldownProgress.style.transform = `scaleX(${progress})`;
+      this.meleeCooldownIndicator.style.display = 'block';
+    } else {
+      // Cooldown complete
+      cooldownProgress.style.transform = 'scaleX(1)';
+      
+      // Hide after a short delay
+      if (elapsedTime > this.meleeCooldown + 1) {
+        this.meleeCooldownIndicator.style.display = 'none';
+      }
+    }
+  }
+  
+  private updateShootCooldownIndicator(): void {
+    if (!this.shootCooldownIndicator) return;
+    
+    const cooldownProgress = document.getElementById('shoot-cooldown-progress');
+    if (!cooldownProgress) return;
+    
+    const currentTime = performance.now() / 1000;
+    const elapsedTime = currentTime - this.lastShootTime;
+    const shootCooldown = this.player.getWeapon().cooldown;
+    
+    if (elapsedTime < shootCooldown) {
+      // Still on cooldown
+      const progress = elapsedTime / shootCooldown;
+      cooldownProgress.style.transform = `scaleX(${progress})`;
+      this.shootCooldownIndicator.style.display = 'block';
+    } else {
+      // Cooldown complete
+      cooldownProgress.style.transform = 'scaleX(1)';
+      
+      // Hide after a short delay
+      if (elapsedTime > shootCooldown + 1) {
+        this.shootCooldownIndicator.style.display = 'none';
+      }
+    }
+  }
+
+  /**
+   * Apply a camera shake effect
+   * @param intensity How strong the shake is
+   * @param duration How long the shake lasts in seconds
+   */
+  private applyCameraShake(intensity: number, duration: number): void {
+    const camera = this.renderingSystem.getCamera();
+    const originalPosition = camera.position.clone();
+    
+    let elapsed = 0;
+    const shakeInterval = 1/60; // 60fps
+    const maxShakeTime = duration;
+    
+    // Store original camera position
+    const startPos = {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z
+    };
+    
+    // Function to apply a single shake step
+    const applyShake = () => {
+      elapsed += shakeInterval;
+      
+      if (elapsed < maxShakeTime) {
+        // Calculate shake intensity that decreases over time
+        const currentIntensity = intensity * (1 - elapsed / maxShakeTime);
+        
+        // Apply random offset to camera
+        camera.position.set(
+          startPos.x + (Math.random() - 0.5) * currentIntensity,
+          startPos.y + (Math.random() - 0.5) * currentIntensity,
+          startPos.z + (Math.random() - 0.5) * currentIntensity
+        );
+        
+        // Schedule next shake
+        setTimeout(applyShake, shakeInterval * 1000);
+      } else {
+        // Reset to original position when done
+        camera.position.copy(originalPosition);
+      }
+    };
+    
+    // Start the shake effect
+    applyShake();
+  }
+
+  /**
+   * Show feedback when player is out of ammo
+   */
+  private showOutOfAmmoFeedback(): void {
+    // Create a text indicator
+    const ammoText = document.createElement('div');
+    ammoText.textContent = 'OUT OF AMMO - PRESS R TO RELOAD';
+    ammoText.style.position = 'absolute';
+    ammoText.style.top = '50%';
+    ammoText.style.left = '50%';
+    ammoText.style.transform = 'translate(-50%, -50%)';
+    ammoText.style.color = 'red';
+    ammoText.style.fontWeight = 'bold';
+    ammoText.style.fontSize = '24px';
+    ammoText.style.textShadow = '2px 2px 4px black';
+    ammoText.style.pointerEvents = 'none';
+    ammoText.style.userSelect = 'none';
+    ammoText.style.opacity = '0.8';
+    
+    document.body.appendChild(ammoText);
+    
+    // Fade out and remove
+    setTimeout(() => {
+      let opacity = 0.8;
+      const fadeInterval = setInterval(() => {
+        opacity -= 0.1;
+        ammoText.style.opacity = opacity.toString();
+        
+        if (opacity <= 0) {
+          clearInterval(fadeInterval);
+          document.body.removeChild(ammoText);
+        }
+      }, 50);
+    }, 1000);
   }
 }
 

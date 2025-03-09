@@ -9,9 +9,18 @@ class Zombie implements HealthBarEntity {
   public health: number = 50;
   public maxHealth: number = 50; // Added for health bar interface
   public isAlive: boolean = true;
+  public deathTime: number | null = null; // Track when the zombie died for cleanup
   private mesh: THREE.Group;
   private detectionRange: number = 50; // How far zombies can detect the player
   private animationTime: number = 0;
+  private isRagdolled: boolean = false; // Track if zombie is currently in ragdoll state
+  private ragdollEndTime: number = 0; // When the ragdoll effect should end
+  private ragdollDuration: number = 1.5; // How long the ragdoll effect lasts in seconds
+  private originalRotation: THREE.Euler = new THREE.Euler(); // Store original rotation
+  private knockbackVelocity: THREE.Vector3 = new THREE.Vector3(); // Velocity for smooth knockback
+  private knockbackDuration: number = 0.5; // Duration of knockback animation in seconds
+  private knockbackStartTime: number = 0; // When the knockback started
+  private knockbackTargetPosition: THREE.Vector3 = new THREE.Vector3(); // Target position after knockback
 
   constructor(startPos: THREE.Vector3 | number = Math.random() * 800, y?: number) {
     if (startPos instanceof THREE.Vector3) {
@@ -97,6 +106,41 @@ class Zombie implements HealthBarEntity {
     // Update animation time
     this.animationTime += deltaTime;
     
+    // Handle knockback animation if active
+    const currentTime = performance.now() / 1000;
+    if (this.isRagdolled) {
+      // Check if we're still in the knockback phase
+      const knockbackElapsed = currentTime - this.knockbackStartTime;
+      if (knockbackElapsed < this.knockbackDuration) {
+        // Calculate progress (0 to 1)
+        const progress = knockbackElapsed / this.knockbackDuration;
+        
+        // Apply easing for more natural movement (ease-out)
+        const easedProgress = 1 - Math.pow(1 - progress, 3);
+        
+        // Interpolate between start and target position
+        const startX = this.x - this.knockbackVelocity.x * this.knockbackDuration;
+        const startY = this.y - this.knockbackVelocity.z * this.knockbackDuration;
+        
+        this.x = startX + this.knockbackVelocity.x * this.knockbackDuration * easedProgress;
+        this.y = startY + this.knockbackVelocity.z * this.knockbackDuration * easedProgress;
+        
+        // Update mesh position
+        this.mesh.position.set(this.x, this.mesh.position.y, this.y);
+        
+        // Apply some random rotation while in ragdoll state to simulate tumbling
+        this.mesh.rotation.x += (Math.random() - 0.5) * 0.1;
+        this.mesh.rotation.z += (Math.random() - 0.5) * 0.1;
+      }
+      
+      // Check if ragdoll effect should end
+      if (currentTime >= this.ragdollEndTime) {
+        this.recoverFromRagdoll();
+      }
+      
+      return; // Skip normal movement while ragdolled
+    }
+    
     // Calculate direction to player
     const dx = playerPos.x - this.x;
     const dz = playerPos.z - this.y;
@@ -171,6 +215,7 @@ class Zombie implements HealthBarEntity {
     if (this.health <= 0) {
       this.health = 0;
       this.isAlive = false;
+      this.deathTime = performance.now() / 1000; // Record death time in seconds
       
       // Make the zombie fall down when dead
       this.mesh.rotation.x = Math.PI / 2;
@@ -185,6 +230,105 @@ class Zombie implements HealthBarEntity {
     this.y = y;
     // Update mesh position to match logical position
     this.mesh.position.set(this.x, 0, this.y);
+  }
+
+  /**
+   * Apply a ragdoll effect to the zombie with knockback
+   * @param knockbackDirection Direction to knock the zombie back
+   * @param knockbackForce How far to knock the zombie back
+   */
+  public applyRagdollEffect(knockbackDirection?: THREE.Vector3, knockbackForce?: number): void {
+    // Store current time
+    const currentTime = performance.now() / 1000;
+    
+    // Set ragdoll end time
+    this.ragdollEndTime = currentTime + this.ragdollDuration;
+    
+    // Store original rotation if not already ragdolled
+    if (!this.isRagdolled) {
+      this.originalRotation.copy(this.mesh.rotation);
+    }
+    
+    // Set ragdoll flag
+    this.isRagdolled = true;
+    
+    // Apply initial random rotation to simulate being knocked back
+    this.mesh.rotation.x = (Math.random() - 0.5) * Math.PI * 0.5;
+    this.mesh.rotation.z = (Math.random() - 0.5) * Math.PI * 0.5;
+    
+    // Raise the zombie slightly off the ground during ragdoll
+    this.mesh.position.y = 0.5;
+    
+    // Set up knockback animation
+    this.knockbackStartTime = currentTime;
+    
+    // If knockback direction is provided, use it
+    if (knockbackDirection && knockbackForce) {
+      // Calculate knockback velocity
+      this.knockbackVelocity.set(
+        knockbackDirection.x * knockbackForce,
+        0,
+        knockbackDirection.z * knockbackForce
+      );
+      
+      // Calculate target position
+      this.knockbackTargetPosition.set(
+        this.x + this.knockbackVelocity.x * this.knockbackDuration,
+        0,
+        this.y + this.knockbackVelocity.z * this.knockbackDuration
+      );
+    }
+    
+    console.log('Zombie ragdolled');
+  }
+  
+  /**
+   * Recover from ragdoll effect
+   */
+  private recoverFromRagdoll(): void {
+    // Reset ragdoll flag
+    this.isRagdolled = false;
+    
+    // Reset position height
+    this.mesh.position.y = 0;
+    
+    // Reset rotation (smoothly in the next few frames)
+    this.mesh.rotation.x = 0;
+    this.mesh.rotation.z = 0;
+    
+    // Play recovery sound
+    this.playRecoverySound();
+    
+    console.log('Zombie recovered from ragdoll');
+  }
+  
+  /**
+   * Play a sound when zombie recovers from ragdoll state
+   */
+  private playRecoverySound(): void {
+    // Create audio context
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Create oscillator for growl sound
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    // Set up a low growl sound
+    oscillator.type = 'sawtooth';
+    oscillator.frequency.setValueAtTime(100, audioContext.currentTime);
+    oscillator.frequency.linearRampToValueAtTime(80, audioContext.currentTime + 0.5);
+    
+    // Connect nodes
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // Set volume and fade out
+    gainNode.gain.setValueAtTime(0.05, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
+    
+    // Play sound
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.5);
   }
 }
 
