@@ -228,17 +228,34 @@ class GameEngine {
     let moveJoystickOrigin = { x: 0, y: 0 };
     const leftKnob = document.getElementById('left-joystick-knob');
     const moveJoystickMaxDistance = 40; // Max distance the joystick can move
+    let moveJoystickTouchId: number | null = null; // Track the touch identifier for movement joystick
     
     // Aim joystick variables
     let isAimJoystickActive = false;
     let aimJoystickOrigin = { x: 0, y: 0 };
     const rightKnob = document.getElementById('right-joystick-knob');
     const aimJoystickMaxDistance = 40; // Max distance the joystick can move
+    let aimJoystickTouchId: number | null = null; // Track the touch identifier for aim joystick
+    
+    // Add a helper function to find a touch by its identifier
+    const findTouchById = (touches: TouchList, id: number): Touch | undefined => {
+      for (let i = 0; i < touches.length; i++) {
+        if (touches[i].identifier === id) {
+          return touches[i];
+        }
+      }
+      return undefined;
+    };
     
     // Movement joystick touch events
     moveJoystickContainer.addEventListener('touchstart', (e) => {
+      // If this joystick is already active with another touch, ignore new touches
+      if (isMoveJoystickActive) return;
+      
+      const touch = e.changedTouches[0]; // Get the first new touch
+      moveJoystickTouchId = touch.identifier; // Store the touch identifier
       isMoveJoystickActive = true;
-      const touch = e.touches[0];
+      
       const rect = moveJoystickContainer.getBoundingClientRect();
       moveJoystickOrigin.x = touch.clientX - rect.left;
       moveJoystickOrigin.y = touch.clientY - rect.top;
@@ -254,9 +271,14 @@ class GameEngine {
     });
     
     moveJoystickContainer.addEventListener('touchmove', (e) => {
-      if (!isMoveJoystickActive || !leftKnob) return;
+      if (!isMoveJoystickActive || !leftKnob || moveJoystickTouchId === null) return;
       
-      const touch = e.touches[0];
+      // Find the touch with the matching identifier from all active touches
+      const touch = findTouchById(e.touches, moveJoystickTouchId);
+      
+      // If we couldn't find the touch, return
+      if (!touch) return;
+      
       const rect = moveJoystickContainer.getBoundingClientRect();
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
@@ -285,41 +307,60 @@ class GameEngine {
     });
     
     moveJoystickContainer.addEventListener('touchend', (e) => {
-      isMoveJoystickActive = false;
-      
-      // Reset knob position
-      if (leftKnob) {
-        leftKnob.style.left = '50%';
-        leftKnob.style.top = '50%';
-        leftKnob.style.transform = 'translate(-50%, -50%)';
+      // Find the touch with the matching identifier
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === moveJoystickTouchId) {
+          isMoveJoystickActive = false;
+          moveJoystickTouchId = null;
+          
+          // Reset knob position
+          if (leftKnob) {
+            leftKnob.style.left = '50%';
+            leftKnob.style.top = '50%';
+            leftKnob.style.transform = 'translate(-50%, -50%)';
+          }
+          
+          // Reset input
+          this.inputSystem.setMoveJoystickInput(0, 0);
+          break;
+        }
       }
-      
-      // Reset input
-      this.inputSystem.setMoveJoystickInput(0, 0);
       
       e.preventDefault();
     });
     
     moveJoystickContainer.addEventListener('touchcancel', (e) => {
-      isMoveJoystickActive = false;
-      
-      // Reset knob position
-      if (leftKnob) {
-        leftKnob.style.left = '50%';
-        leftKnob.style.top = '50%';
-        leftKnob.style.transform = 'translate(-50%, -50%)';
+      // Find the touch with the matching identifier
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === moveJoystickTouchId) {
+          isMoveJoystickActive = false;
+          moveJoystickTouchId = null;
+          
+          // Reset knob position
+          if (leftKnob) {
+            leftKnob.style.left = '50%';
+            leftKnob.style.top = '50%';
+            leftKnob.style.transform = 'translate(-50%, -50%)';
+          }
+          
+          // Reset input
+          this.inputSystem.setMoveJoystickInput(0, 0);
+          break;
+        }
       }
-      
-      // Reset input
-      this.inputSystem.setMoveJoystickInput(0, 0);
       
       e.preventDefault();
     });
     
     // Aim joystick touch events
     aimJoystickContainer.addEventListener('touchstart', (e) => {
+      // If this joystick is already active with another touch, ignore new touches
+      if (isAimJoystickActive) return;
+      
+      const touch = e.changedTouches[0]; // Get the first new touch
+      aimJoystickTouchId = touch.identifier; // Store the touch identifier
       isAimJoystickActive = true;
-      const touch = e.touches[0];
+      
       const rect = aimJoystickContainer.getBoundingClientRect();
       aimJoystickOrigin.x = touch.clientX - rect.left;
       aimJoystickOrigin.y = touch.clientY - rect.top;
@@ -335,9 +376,14 @@ class GameEngine {
     });
     
     aimJoystickContainer.addEventListener('touchmove', (e) => {
-      if (!isAimJoystickActive || !rightKnob) return;
+      if (!isAimJoystickActive || !rightKnob || aimJoystickTouchId === null) return;
       
-      const touch = e.touches[0];
+      // Find the touch with the matching identifier from all active touches
+      const touch = findTouchById(e.touches, aimJoystickTouchId);
+      
+      // If we couldn't find the touch, return
+      if (!touch) return;
+      
       const rect = aimJoystickContainer.getBoundingClientRect();
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
@@ -366,56 +412,122 @@ class GameEngine {
     });
     
     aimJoystickContainer.addEventListener('touchend', (e) => {
-      isAimJoystickActive = false;
-      
-      // Reset knob position
-      if (rightKnob) {
-        rightKnob.style.left = '50%';
-        rightKnob.style.top = '50%';
-        rightKnob.style.transform = 'translate(-50%, -50%)';
+      // Find the touch with the matching identifier
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === aimJoystickTouchId) {
+          isAimJoystickActive = false;
+          aimJoystickTouchId = null;
+          
+          // Reset knob position
+          if (rightKnob) {
+            rightKnob.style.left = '50%';
+            rightKnob.style.top = '50%';
+            rightKnob.style.transform = 'translate(-50%, -50%)';
+          }
+          
+          // Reset input
+          this.inputSystem.setAimJoystickInput(0, 0, false);
+          break;
+        }
       }
-      
-      // Reset input
-      this.inputSystem.setAimJoystickInput(0, 0, false);
       
       e.preventDefault();
     });
     
     aimJoystickContainer.addEventListener('touchcancel', (e) => {
-      isAimJoystickActive = false;
-      
-      // Reset knob position
-      if (rightKnob) {
-        rightKnob.style.left = '50%';
-        rightKnob.style.top = '50%';
-        rightKnob.style.transform = 'translate(-50%, -50%)';
+      // Find the touch with the matching identifier
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === aimJoystickTouchId) {
+          isAimJoystickActive = false;
+          aimJoystickTouchId = null;
+          
+          // Reset knob position
+          if (rightKnob) {
+            rightKnob.style.left = '50%';
+            rightKnob.style.top = '50%';
+            rightKnob.style.transform = 'translate(-50%, -50%)';
+          }
+          
+          // Reset input
+          this.inputSystem.setAimJoystickInput(0, 0, false);
+          break;
+        }
       }
-      
-      // Reset input
-      this.inputSystem.setAimJoystickInput(0, 0, false);
       
       e.preventDefault();
     });
     
     // Melee button touch events
+    let meleeTouchId: number | null = null;
+    
     meleeButton.addEventListener('touchstart', (e) => {
+      // If already pressed, ignore
+      if (meleeTouchId !== null) return;
+      
+      const touch = e.changedTouches[0];
+      meleeTouchId = touch.identifier;
       this.inputSystem.setMobileButtonInput('melee', true);
       e.preventDefault();
     });
     
     meleeButton.addEventListener('touchend', (e) => {
-      this.inputSystem.setMobileButtonInput('melee', false);
+      // Find the touch with the matching identifier
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === meleeTouchId) {
+          meleeTouchId = null;
+          this.inputSystem.setMobileButtonInput('melee', false);
+          break;
+        }
+      }
+      e.preventDefault();
+    });
+    
+    meleeButton.addEventListener('touchcancel', (e) => {
+      // Find the touch with the matching identifier
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === meleeTouchId) {
+          meleeTouchId = null;
+          this.inputSystem.setMobileButtonInput('melee', false);
+          break;
+        }
+      }
       e.preventDefault();
     });
     
     // Reload button touch events
+    let reloadTouchId: number | null = null;
+    
     reloadButton.addEventListener('touchstart', (e) => {
+      // If already pressed, ignore
+      if (reloadTouchId !== null) return;
+      
+      const touch = e.changedTouches[0];
+      reloadTouchId = touch.identifier;
       this.inputSystem.setMobileButtonInput('reload', true);
       e.preventDefault();
     });
     
     reloadButton.addEventListener('touchend', (e) => {
-      this.inputSystem.setMobileButtonInput('reload', false);
+      // Find the touch with the matching identifier
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === reloadTouchId) {
+          reloadTouchId = null;
+          this.inputSystem.setMobileButtonInput('reload', false);
+          break;
+        }
+      }
+      e.preventDefault();
+    });
+    
+    reloadButton.addEventListener('touchcancel', (e) => {
+      // Find the touch with the matching identifier
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === reloadTouchId) {
+          reloadTouchId = null;
+          this.inputSystem.setMobileButtonInput('reload', false);
+          break;
+        }
+      }
       e.preventDefault();
     });
   }
