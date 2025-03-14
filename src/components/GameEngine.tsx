@@ -1202,126 +1202,135 @@ class GameEngine {
 
   private loop(currentTime: number): void {
     // Calculate delta time in seconds
-    const deltaTime = (currentTime - this.lastTime) / 1000;
+    const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.1); // Cap at 100ms to prevent huge jumps
     this.lastTime = currentTime;
     
-    // Skip if delta time is too large (e.g. after tab switch)
-    if (deltaTime > 0.5) {
-      requestAnimationFrame(this.loop.bind(this));
-      return;
-    }
-    
-    // Handle respawn countdown if player is dead
-    if (this.playerDead) {
-      this.updateRespawnCountdown(deltaTime);
-      this.renderingSystem.render();
-      requestAnimationFrame(this.loop.bind(this));
-      return;
-    }
-    
-    // Skip update if game is over (and not in respawn state)
-    if (this._gameOver) {
-      // Just render the scene
-      this.renderingSystem.render();
-      requestAnimationFrame(this.loop.bind(this));
-      return;
-    }
-    
-    // Update input system
-    this.inputSystem.update();
-    
-    // Update player if alive
-    if (this.player.isAlive) {
+    // Only update game if player is alive or still in respawn countdown
+    if (this.player.isAlive || this.playerDead) {
+      // Handle player input
+      this.handleInput();
+      
+      // Get player's intended movement from InputSystem before applying it
+      const input = this.inputSystem.getInput();
+      const isMobile = this.inputSystem.isMobile();
+      let moveX = 0;
+      let moveY = 0;
+      
+      if (isMobile) {
+        const moveJoystickInput = this.inputSystem.getMoveJoystickInput();
+        moveX = moveJoystickInput.x;
+        moveY = moveJoystickInput.y;
+      } else {
+        // Get movement direction from keyboard input
+        if (input['w']) moveY -= 1;
+        if (input['s']) moveY += 1;
+        if (input['a']) moveX -= 1;
+        if (input['d']) moveX += 1;
+        
+        // Normalize if moving diagonally
+        if (moveX !== 0 && moveY !== 0) {
+          const length = Math.sqrt(moveX * moveX + moveY * moveY);
+          moveX /= length;
+          moveY /= length;
+        }
+      }
+      
+      // Only apply movement if player is alive
+      if (this.player.isAlive && (moveX !== 0 || moveY !== 0)) {
+        // Calculate potential new position
+        const playerPos = this.player.getMesh().position;
+        const speed = this.player.speed;
+        const newX = playerPos.x + moveX * speed * deltaTime;
+        const newY = playerPos.z + moveY * speed * deltaTime;
+        
+        // Check if new position would cause collision with any zombie
+        // and get the adjusted position for sliding along the edge
+        const collisionResult = this.checkPlayerZombieCollision(newX, newY);
+        
+        // Update to the final position (either the original target or the slide position)
+        this.player.updatePosition(collisionResult.x, collisionResult.y);
+      }
+      
+      // Update the player
       this.player.update(deltaTime, this.inputSystem);
+      
+      // Update the health bar position
       this.uiSystem.updateHealthBar(this.player);
       
-      // Send player position update to server every 100ms
-      if (Math.random() < 0.1) { // Approximately every 10 frames at 60fps
-        const position = this.player.getMesh().position;
-        const rotation = this.player.getMesh().rotation.y;
-        this.networkSystem.sendPlayerUpdate(
-          { x: position.x, y: position.y, z: position.z },
-          rotation
-        );
+      // Update melee cooldown indicator
+      this.updateMeleeCooldownIndicator();
+      
+      // Update shoot cooldown indicator
+      this.updateShootCooldownIndicator();
+      
+      // Update zombie spawning
+      this.zombieSpawnTime += deltaTime;
+      if (this.zombieSpawnTime >= this.zombieSpawnRate) {
+        this.spawnZombie();
+        this.zombieSpawnTime = 0;
       }
-    }
-    
-    // Handle player input
-    this.handleInput();
-    
-    // Update zombie spawning
-    this.zombieSpawnTime += deltaTime;
-    if (this.zombieSpawnTime >= this.zombieSpawnRate) {
-      this.spawnZombie();
-      this.zombieSpawnTime = 0;
-    }
-    
-    // Update melee cooldown indicator
-    this.updateMeleeCooldownIndicator();
-    
-    // Update shoot cooldown indicator
-    this.updateShootCooldownIndicator();
-    
-    // Update all zombies
-    for (const zombie of this.zombies) {
-      if (zombie.isAlive) {
-        // Pass player position to zombie update instead of player object
-        zombie.update(deltaTime, this.player.getMesh().position);
-        this.uiSystem.updateHealthBar(zombie);
-        
-        // Check distance for zombie attack
-        const zombiePos = zombie.getMesh().position;
-        const playerPos = this.player.getMesh().position;
-        const dx = playerPos.x - zombiePos.x;
-        const dz = playerPos.z - zombiePos.z;
-        const distance = Math.sqrt(dx * dx + dz * dz);
-        
-        // Zombie damages player when close enough
-        if (distance < 1.5 && this.player.isAlive) {
-          const damage = 5 * deltaTime; // Damage scaled by time
-          this.player.takeDamage(damage);
+      
+      // Update all zombies
+      for (const zombie of this.zombies) {
+        if (zombie.isAlive) {
+          // Pass player position to zombie update instead of player object
+          zombie.update(deltaTime, this.player.getMesh().position);
+          this.uiSystem.updateHealthBar(zombie);
           
-          // Check if player died from this attack
-          if (!this.player.isAlive) {
-            this.handlePlayerDeath();
+          // Check distance for zombie attack
+          const zombiePos = zombie.getMesh().position;
+          const playerPos = this.player.getMesh().position;
+          const dx = playerPos.x - zombiePos.x;
+          const dz = playerPos.z - zombiePos.z;
+          const distance = Math.sqrt(dx * dx + dz * dz);
+          
+          // Zombie damages player when close enough
+          if (distance <= 0.7 && this.player.isAlive) {
+            const damage = 5 * deltaTime; // Damage scaled by time
+            this.player.takeDamage(damage);
+            
+            // Check if player died from this attack
+            if (!this.player.isAlive) {
+              this.handlePlayerDeath();
+            }
           }
         }
       }
-    }
+      
+      // Clean up dead zombies periodically to avoid performance issues
+      const now = performance.now() / 1000;
+      if (now - this.lastZombieCleanupTime > this.zombieCleanupInterval) {
+        this.cleanupDeadZombies();
+        this.lastZombieCleanupTime = now;
+      }
+      
+      // Update scoreboard
+      this.updateScoreboard();
+      
+      // Update ammo indicator
+      this.updateAmmoIndicator();
+      
+      // Scale difficulty over time
+      this.timeSinceLastDifficultyIncrease += deltaTime;
+      if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
+        this.increaseDifficulty();
+        this.timeSinceLastDifficultyIncrease = 0;
+      }
+      
+      // Update camera position to follow player
+      const playerPos = this.player.getMesh().position;
+      this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
+      
+      // Update all health bar positions to follow their entities
+      this.uiSystem.update(this.renderingSystem.getCamera());
     
-    // Clean up dead zombies periodically to avoid performance issues
-    const now = performance.now() / 1000;
-    if (now - this.lastZombieCleanupTime > this.zombieCleanupInterval) {
-      this.cleanupDeadZombies();
-      this.lastZombieCleanupTime = now;
-    }
-    
-    // Update scoreboard
-    this.updateScoreboard();
-    
-    // Update ammo indicator
-    this.updateAmmoIndicator();
-    
-    // Scale difficulty over time
-    this.timeSinceLastDifficultyIncrease += deltaTime;
-    if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
-      this.increaseDifficulty();
-      this.timeSinceLastDifficultyIncrease = 0;
-    }
-    
-    // Update camera position to follow player
-    const playerPos = this.player.getMesh().position;
-    this.renderingSystem.setCameraPosition(playerPos.x, playerPos.y, playerPos.z);
-    
-    // Update all health bar positions to follow their entities
-    this.uiSystem.update(this.renderingSystem.getCamera());
-  
-    // Render the scene
-    this.renderingSystem.render();
-    
-    // Update mobile controls position if needed
-    if (this.isMobile && this.mobileControlsElement) {
-      this.updateMobileControlsPosition();
+      // Render the scene
+      this.renderingSystem.render();
+      
+      // Update mobile controls position if needed
+      if (this.isMobile && this.mobileControlsElement) {
+        this.updateMobileControlsPosition();
+      }
     }
     
     // Continue game loop
@@ -2231,6 +2240,116 @@ class GameEngine {
         }
       }, 50);
     }, 1000);
+  }
+
+  // Add this new method after cleanupDeadZombies
+  private checkPlayerZombieCollision(newPlayerX: number, newPlayerY: number): { x: number, y: number, collision: boolean } {
+    // Get current player position
+    const playerPos = this.player.getMesh().position;
+    const currentX = playerPos.x;
+    const currentY = playerPos.z;
+    
+    // Check if the player's next position would collide with any zombie
+    const collisionBuffer = 0.7; // Match zombie attack range to prevent walking through
+    let minDistance = Number.MAX_VALUE;
+    let closestZombie: Zombie | null = null;
+    
+    // First check if there's a collision and find the closest zombie
+    for (const zombie of this.zombies) {
+      if (!zombie.isAlive) continue;
+      
+      // Calculate distance between player's potential new position and zombie
+      const dx = newPlayerX - zombie.x;
+      const dz = newPlayerY - zombie.y;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      
+      // If distance is less than buffer, there's a collision
+      if (distance < collisionBuffer && distance < minDistance) {
+        minDistance = distance;
+        closestZombie = zombie;
+      }
+    }
+    
+    // If no collision, return the original position
+    if (!closestZombie) {
+      return { x: newPlayerX, y: newPlayerY, collision: false };
+    }
+    
+    // We have a collision, calculate sliding movement
+    const zombieX = closestZombie.x;
+    const zombieY = closestZombie.y;
+    
+    // Get the movement vector
+    const moveDirX = newPlayerX - currentX;
+    const moveDirY = newPlayerY - currentY;
+    const moveDist = Math.sqrt(moveDirX * moveDirX + moveDirY * moveDirY);
+    
+    // If not moving, return current position
+    if (moveDist < 0.0001) {
+      return { x: currentX, y: currentY, collision: true };
+    }
+    
+    // Direction to the zombie from the attempted position
+    const toZombieX = zombieX - newPlayerX;
+    const toZombieY = zombieY - newPlayerY;
+    const toZombieDist = Math.sqrt(toZombieX * toZombieX + toZombieY * toZombieY);
+    
+    // Normalize the vector to the zombie
+    const normalizedToZombieX = toZombieX / toZombieDist;
+    const normalizedToZombieY = toZombieY / toZombieDist;
+    
+    // Calculate the overlap distance (how much we need to move away from the zombie)
+    const overlap = collisionBuffer - toZombieDist;
+    
+    // Push the player away from the zombie to the collision boundary
+    const collisionBoundaryX = newPlayerX - normalizedToZombieX * overlap;
+    const collisionBoundaryY = newPlayerY - normalizedToZombieY * overlap;
+    
+    // Calculate dot product between movement direction and collision normal
+    // This tells us how much of the movement is going into the zombie
+    const normalizedMoveDirX = moveDirX / moveDist;
+    const normalizedMoveDirY = moveDirY / moveDist;
+    const dot = normalizedMoveDirX * normalizedToZombieX + normalizedMoveDirY * normalizedToZombieY;
+    
+    // Calculate the slide direction (perpendicular to collision normal)
+    // This is the tangent direction along the collision surface
+    const slideX = normalizedMoveDirX - normalizedToZombieX * dot;
+    const slideY = normalizedMoveDirY - normalizedToZombieY * dot;
+    const slideMag = Math.sqrt(slideX * slideX + slideY * slideY);
+    
+    // If slide magnitude is too small, just return the collision boundary
+    if (slideMag < 0.0001) {
+      return { x: collisionBoundaryX, y: collisionBoundaryY, collision: true };
+    }
+    
+    // Normalize the slide direction
+    const normalizedSlideX = slideX / slideMag;
+    const normalizedSlideY = slideY / slideMag;
+    
+    // Calculate how far we can move along the slide direction
+    // Use the full movement distance to allow sliding at the same speed
+    const slideDistanceX = normalizedSlideX * moveDist;
+    const slideDistanceY = normalizedSlideY * moveDist;
+    
+    // Calculate final position after sliding
+    const finalX = collisionBoundaryX + slideDistanceX;
+    const finalY = collisionBoundaryY + slideDistanceY;
+    
+    // Double-check that the final sliding position doesn't collide with any other zombies
+    for (const zombie of this.zombies) {
+      if (!zombie.isAlive || zombie === closestZombie) continue;
+      
+      const dx = finalX - zombie.x;
+      const dz = finalY - zombie.y;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      
+      if (distance < collisionBuffer) {
+        // If sliding would cause another collision, just return the collision boundary
+        return { x: collisionBoundaryX, y: collisionBoundaryY, collision: true };
+      }
+    }
+    
+    return { x: finalX, y: finalY, collision: true };
   }
 }
 

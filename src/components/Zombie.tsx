@@ -148,15 +148,38 @@ class Zombie implements HealthBarEntity {
     
     // Only chase if player is in detection range
     if (distance <= this.detectionRange) {
-      if (distance > 0.1) { // Avoid division by zero and jittering
+      // Minimum distance to maintain from player (buffer zone)
+      const minDistanceBuffer = 0.5;
+      
+      // Only move closer if we're outside the buffer zone
+      if (distance > minDistanceBuffer) {
         // Normalize direction
         const normalizedDx = dx / distance;
         const normalizedDz = dz / distance;
         
-        // Update position with slightly increased speed when closer to player
+        // Calculate new position with chase speed
         const chaseSpeed = this.speed * (1 + (1 - Math.min(distance, this.detectionRange) / this.detectionRange) * 0.5);
-        this.x += normalizedDx * chaseSpeed * deltaTime;
-        this.y += normalizedDz * chaseSpeed * deltaTime;
+        
+        // Calculate potential new position
+        const newX = this.x + normalizedDx * chaseSpeed * deltaTime;
+        const newY = this.y + normalizedDz * chaseSpeed * deltaTime;
+        
+        // Calculate new distance after movement
+        const newDx = playerPos.x - newX;
+        const newDz = playerPos.z - newY;
+        const newDistance = Math.sqrt(newDx * newDx + newDz * newDz);
+        
+        // Only update position if we wouldn't get closer than the buffer
+        if (newDistance >= minDistanceBuffer) {
+          this.x = newX;
+          this.y = newY;
+        } else {
+          // If movement would bring us too close, stop at the buffer distance
+          // Calculate position at exactly buffer distance
+          const bufferRatio = (distance - minDistanceBuffer) / distance;
+          this.x += normalizedDx * chaseSpeed * deltaTime * bufferRatio;
+          this.y += normalizedDz * chaseSpeed * deltaTime * bufferRatio;
+        }
         
         // Update mesh position - Important: y is vertical in Three.js, but z is our depth coordinate in game logic
         this.mesh.position.set(this.x, 0, this.y);

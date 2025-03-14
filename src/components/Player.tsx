@@ -149,11 +149,8 @@ class Player implements HealthBarEntity {
       const dx = moveJoystickInput.x;
       const dz = moveJoystickInput.y;
       
-      // Update position
-      this.x += dx * this.speed * deltaTime;
-      this.y += dz * this.speed * deltaTime;
-      
-      // Animate walking
+      // Position is now updated by GameEngine with collision detection
+      // Animation is still handled here
       this.animateWalking(deltaTime);
     } else {
       // Reset animation when still
@@ -183,8 +180,7 @@ class Player implements HealthBarEntity {
       this.mesh.rotation.y = angle;
     }
     
-    // Update mesh position
-    this.mesh.position.set(this.x, 0, this.y);
+    // Update mesh position is now handled by the GameEngine
   }
   
   private handleKeyboardMovement(deltaTime: number, input: { [key: string]: boolean }): void {
@@ -204,9 +200,7 @@ class Player implements HealthBarEntity {
       dx /= length;
       dz /= length;
       
-      // Update position
-      this.x += dx * this.speed * deltaTime;
-      this.y += dz * this.speed * deltaTime;
+      // Position is now updated by GameEngine with collision detection
       
       // Update direction vector
       this.direction.set(dx, 0, dz).normalize();
@@ -222,8 +216,7 @@ class Player implements HealthBarEntity {
       this.resetAnimation();
     }
     
-    // Update mesh position
-    this.mesh.position.set(this.x, 0, this.y);
+    // Update mesh position is now handled by the GameEngine
   }
   
   private animateWalking(_deltaTime: number): void {
@@ -292,6 +285,8 @@ class Player implements HealthBarEntity {
   public updatePosition(x: number, y: number): void {
     this.x = x;
     this.y = y;
+    // Update mesh position to match logical position
+    this.mesh.position.set(this.x, 0, this.y);
   }
   
   public getForwardDirection(): THREE.Vector3 {

@@ -1,6 +1,7 @@
 // This file is the main application entry point that handles game initialization
 import GameEngine from './components/GameEngine';
 import './App.css';
+import { Analytics } from "@vercel/analytics/react";
 
 class App {
   private gameEngine: GameEngine | null = null;
