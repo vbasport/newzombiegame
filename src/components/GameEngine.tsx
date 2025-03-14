@@ -30,6 +30,7 @@ class GameEngine {
   private respawnCountdown: number = 0; // Respawn timer in seconds
   private respawnTime: number = 5; // Reduced from 10 to 5 seconds
   private playerDead: boolean = false; // Track if player is currently dead
+  private respawnButtonEnabled: boolean = false; // Track if the respawn button has been enabled
   private scoreboardElement: HTMLElement | null = null; // Scoreboard DOM element
   private mobileControlsElement: HTMLElement | null = null; // Mobile controls DOM element
   private isMobile: boolean = false; // Detect if using mobile device
@@ -912,15 +913,18 @@ class GameEngine {
 
   private updateRespawnCountdown(deltaTime: number): void {
     if (this.respawnCountdown > 0) {
+      // Decrease the countdown timer
       this.respawnCountdown -= deltaTime;
+      console.log(`Respawn countdown: ${this.respawnCountdown.toFixed(1)}`);
       
-      // Update countdown text
+      // Get the countdown element
       const countdownElement = document.getElementById('respawn-countdown');
       if (countdownElement) {
+        // Update the countdown display with rounded up number
         const secondsLeft = Math.ceil(this.respawnCountdown);
         countdownElement.textContent = secondsLeft.toString();
         
-        // Add a pulse effect when the number changes
+        // Add pulse animation effect
         countdownElement.style.transform = 'scale(1.2)';
         setTimeout(() => {
           if (countdownElement) {
@@ -928,74 +932,82 @@ class GameEngine {
           }
         }, 200);
       }
+    }
+    
+    // Handle countdown completion (separate from the decrement logic)
+    // Only enable button once using the flag
+    if (this.respawnCountdown <= 0 && this.playerDead && !this.respawnButtonEnabled) {
+      console.log('Countdown reached zero, enabling respawn button');
       
-      // When countdown reaches 0, enable the respawn button
-      if (this.respawnCountdown <= 0) {
-        // Update the respawn button if on mobile
-        if (this.isMobile) {
-          const respawnButton = document.getElementById('respawn-button');
-          const respawnMessage = countdownElement?.nextElementSibling;
+      // Set the flag to prevent running this code again
+      this.respawnButtonEnabled = true;
+      
+      // Get UI elements
+      const countdownElement = document.getElementById('respawn-countdown');
+      
+      // Force countdown to exactly zero to prevent multiple executions
+      this.respawnCountdown = 0;
+      
+      if (this.isMobile) {
+        // Mobile version - enable button
+        const respawnButton = document.getElementById('respawn-button');
+        const respawnMessage = countdownElement?.nextElementSibling;
+        
+        if (respawnButton) {
+          // Enable the button
+          respawnButton.removeAttribute('disabled');
+          respawnButton.style.backgroundColor = '#ff3333';
+          respawnButton.style.color = 'white';
+          respawnButton.style.cursor = 'pointer';
+          respawnButton.style.opacity = '1';
+          respawnButton.style.pointerEvents = 'auto';
+          respawnButton.textContent = 'RESPAWN NOW';
           
-          if (respawnButton) {
-            // Enable the button
-            respawnButton.removeAttribute('disabled');
-            respawnButton.style.backgroundColor = '#ff3333';
-            respawnButton.style.color = 'white';
-            respawnButton.style.cursor = 'pointer';
-            respawnButton.style.opacity = '1';
-            respawnButton.style.pointerEvents = 'auto';
-            respawnButton.textContent = 'RESPAWN NOW';
-            
-            // Update message
-            if (respawnMessage) {
-              respawnMessage.textContent = 'Tap to respawn';
-            }
-            
-            // Add event listeners
-            respawnButton.addEventListener('touchstart', () => {
-              if (respawnButton) {
-                respawnButton.style.backgroundColor = '#cc0000';
-                respawnButton.style.transform = 'scale(0.98)';
-              }
-            });
-            
-            respawnButton.addEventListener('touchend', () => {
-              if (respawnButton) {
-                respawnButton.style.backgroundColor = '#ff3333';
-                respawnButton.style.transform = 'scale(1)';
-              }
-              this.respawnPlayer();
-            });
-          }
-        } else {
-          // Update desktop message
-          const respawnMessage = countdownElement?.nextElementSibling;
-          const keyboardMessage = respawnMessage?.nextElementSibling;
-          
+          // Update message
           if (respawnMessage) {
-            respawnMessage.textContent = 'Ready to respawn';
+            respawnMessage.textContent = 'Tap to respawn';
           }
           
-          if (keyboardMessage) {
-            (keyboardMessage as HTMLElement).style.color = '#ffffff';
-            keyboardMessage.textContent = 'Press R to respawn now';
-          }
-          
-          // Add keyboard event listener for R key
-          const handleRespawnKeyPress = (e: KeyboardEvent) => {
-            if (e.code === 'KeyR') {
-              this.respawnPlayer();
-              // Remove the event listener after respawn
-              window.removeEventListener('keydown', handleRespawnKeyPress);
+          // Add event listeners
+          respawnButton.addEventListener('touchstart', () => {
+            if (respawnButton) {
+              respawnButton.style.backgroundColor = '#cc0000';
+              respawnButton.style.transform = 'scale(0.98)';
             }
-          };
+          });
           
-          window.addEventListener('keydown', handleRespawnKeyPress);
+          respawnButton.addEventListener('touchend', () => {
+            if (respawnButton) {
+              respawnButton.style.backgroundColor = '#ff3333';
+              respawnButton.style.transform = 'scale(1)';
+            }
+            this.respawnPlayer();
+          });
+        }
+      } else {
+        // Desktop version - update messages
+        const respawnMessage = countdownElement?.nextElementSibling;
+        const keyboardMessage = respawnMessage?.nextElementSibling;
+        
+        if (respawnMessage) {
+          respawnMessage.textContent = 'Ready to respawn';
         }
         
-        // Don't automatically respawn - wait for player input
-        // Keep the countdown at 0 to prevent multiple calls
-        this.respawnCountdown = 0;
+        if (keyboardMessage) {
+          (keyboardMessage as HTMLElement).style.color = '#ffffff';
+          keyboardMessage.textContent = 'Press R to respawn now';
+        }
+        
+        // Add keyboard event listener for R key
+        const handleRespawnKeyPress = (e: KeyboardEvent) => {
+          if (e.code === 'KeyR') {
+            this.respawnPlayer();
+            // Remove the event listener after respawn
+            window.removeEventListener('keydown', handleRespawnKeyPress);
+          }
+        };
+        
+        window.addEventListener('keydown', handleRespawnKeyPress);
       }
     }
   }
@@ -1026,6 +1038,7 @@ class GameEngine {
     this._gameOver = false;
     this.playerDead = false;
     this.respawnCountdown = 0;
+    this.respawnButtonEnabled = false; // Reset the button enabled flag
     
     // Clear all existing zombies
     this.clearAllZombies();
@@ -1540,17 +1553,25 @@ class GameEngine {
     // This allows the respawn countdown to work
     this.playerDead = true;
     this._gameOver = true;
+    this.respawnButtonEnabled = false; // Reset the flag when player dies
     
     console.log('Player died! Score: ' + this.gameScore);
     
     // Start respawn countdown
     this.respawnCountdown = this.respawnTime;
+    console.log(`Starting respawn countdown: ${this.respawnCountdown} seconds`);
     
     // Store player stats for respawn comparison
     const finalWave = this.waveNumber;
     const finalKills = this.player.kills;
     const finalTime = this.player.timeSurvived;
     const finalScore = this.gameScore;
+    
+    // Remove any existing death overlay first
+    const existingOverlay = document.getElementById('death-overlay');
+    if (existingOverlay) {
+      document.body.removeChild(existingOverlay);
+    }
     
     // Create a single, clean death overlay
     const deathOverlay = document.createElement('div');
@@ -1621,7 +1642,7 @@ class GameEngine {
     
     document.body.appendChild(deathOverlay);
     
-    // We'll enable the button when the countdown finishes
+    // Ensure the game loop is calling updateRespawnCountdown to handle the countdown
   }
 
   private resetGameDifficulty(): void {
