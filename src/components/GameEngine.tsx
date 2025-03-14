@@ -844,10 +844,15 @@ class GameEngine {
   }
 
   private spawnZombie(): void {
+    // Don't spawn zombies if the game is over or the player is dead
+    if (!this.player.isAlive) return;
+    
+    // Check if we're at the maximum number of zombies
     if (this.zombies.length >= this.maxZombies) {
       this.removeOldestDistantZombie();
     }
     
+    // Spawn a zombie at a random position on the edge of the map
     const radius = 50 + Math.random() * 20;
     const angle = Math.random() * Math.PI * 2;
     
@@ -1102,6 +1107,10 @@ class GameEngine {
   }
 
   private increaseDifficulty(): void {
+    // Only increase difficulty if the player is alive
+    // This is a safeguard in case this method is called when player is dead
+    if (!this.player.isAlive) return;
+    
     this.waveNumber++;
     
     // Make zombies spawn faster as waves progress
@@ -1114,7 +1123,10 @@ class GameEngine {
     const waveZombies = Math.min(this.waveNumber + 2, 15);
     for (let i = 0; i < waveZombies; i++) {
       setTimeout(() => {
-        this.spawnZombie();
+        // Only spawn if player is still alive when the timeout fires
+        if (this.player.isAlive) {
+          this.spawnZombie();
+        }
       }, i * 500);
     }
     
@@ -1210,6 +1222,11 @@ class GameEngine {
       // Handle player input
       this.handleInput();
       
+      // Update respawn countdown if player is dead
+      if (this.playerDead) {
+        this.updateRespawnCountdown(deltaTime);
+      }
+      
       // Get player's intended movement from InputSystem before applying it
       const input = this.inputSystem.getInput();
       const isMobile = this.inputSystem.isMobile();
@@ -1263,11 +1280,22 @@ class GameEngine {
       // Update shoot cooldown indicator
       this.updateShootCooldownIndicator();
       
-      // Update zombie spawning
-      this.zombieSpawnTime += deltaTime;
-      if (this.zombieSpawnTime >= this.zombieSpawnRate) {
-        this.spawnZombie();
-        this.zombieSpawnTime = 0;
+      // Only spawn zombies and increase difficulty if the player is alive
+      // This stops wave progression when all players are dead
+      if (this.player.isAlive) {
+        // Update zombie spawning
+        this.zombieSpawnTime += deltaTime;
+        if (this.zombieSpawnTime >= this.zombieSpawnRate) {
+          this.spawnZombie();
+          this.zombieSpawnTime = 0;
+        }
+        
+        // Scale difficulty over time
+        this.timeSinceLastDifficultyIncrease += deltaTime;
+        if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
+          this.increaseDifficulty();
+          this.timeSinceLastDifficultyIncrease = 0;
+        }
       }
       
       // Update all zombies
@@ -1309,13 +1337,6 @@ class GameEngine {
       
       // Update ammo indicator
       this.updateAmmoIndicator();
-      
-      // Scale difficulty over time
-      this.timeSinceLastDifficultyIncrease += deltaTime;
-      if (this.timeSinceLastDifficultyIncrease >= this.difficultyIncreaseInterval) {
-        this.increaseDifficulty();
-        this.timeSinceLastDifficultyIncrease = 0;
-      }
       
       // Update camera position to follow player
       const playerPos = this.player.getMesh().position;
