@@ -1,7 +1,7 @@
 import RenderingSystem from '../systems/RenderingSystem';
 import InputSystem from '../systems/InputSystem';
 import UISystem from '../systems/UISystem';
-import NetworkSystem from '../systems/NetworkSystem';
+// import NetworkSystem from '../systems/NetworkSystem';  // Commented out until multiplayer is implemented
 import Player from './Player';
 import Zombie from './Zombie';
 import * as THREE from 'three';
@@ -10,7 +10,7 @@ class GameEngine {
   private renderingSystem: RenderingSystem;
   private inputSystem: InputSystem;
   private uiSystem: UISystem;
-  private networkSystem: NetworkSystem;
+
   private player: Player;
   private playerName: string;
   private zombies: Zombie[] = [];
@@ -25,7 +25,6 @@ class GameEngine {
   private minSpawnRate: number = 0.3; // Fastest possible spawn rate (seconds) - made faster
   private waveNumber: number = 1; // Track the current wave number
   private gameScore: number = 0;
-  private _gameOver: boolean = false; // Renamed with underscore to indicate private usage
   private debugMode: boolean = false; // For testing and debugging
   private respawnCountdown: number = 0; // Respawn timer in seconds
   private respawnTime: number = 5; // Reduced from 10 to 5 seconds
@@ -50,7 +49,6 @@ class GameEngine {
     this.renderingSystem = new RenderingSystem();
     this.inputSystem = new InputSystem();
     this.uiSystem = new UISystem(this.renderingSystem.getScene());
-    this.networkSystem = new NetworkSystem(this.playerName);
     this.isMobile = this.detectMobile();
     this.player = new Player(this.playerName);
     this.renderingSystem.addToScene(this.player.getMesh());
@@ -1035,7 +1033,6 @@ class GameEngine {
     this.cleanupRespawnUI();
     
     // Reset player state
-    this._gameOver = false;
     this.playerDead = false;
     this.respawnCountdown = 0;
     this.respawnButtonEnabled = false; // Reset the button enabled flag
@@ -1549,10 +1546,8 @@ class GameEngine {
   }
 
   private handlePlayerDeath(): void {
-    // Set player state to dead but keep _gameOver separate
-    // This allows the respawn countdown to work
+    // Set player state to dead
     this.playerDead = true;
-    this._gameOver = true;
     this.respawnButtonEnabled = false; // Reset the flag when player dies
     
     console.log('Player died! Score: ' + this.gameScore);

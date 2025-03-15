@@ -145,10 +145,6 @@ class Player implements HealthBarEntity {
     
     // Only update movement if there's meaningful joystick input
     if (Math.abs(moveJoystickInput.x) > 0.1 || Math.abs(moveJoystickInput.y) > 0.1) {
-      // Get input values (already normalized)
-      const dx = moveJoystickInput.x;
-      const dz = moveJoystickInput.y;
-      
       // Position is now updated by GameEngine with collision detection
       // Animation is still handled here
       this.animateWalking(deltaTime);
